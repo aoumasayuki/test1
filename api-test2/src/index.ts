@@ -1,17 +1,12 @@
 import { serve } from '@hono/node-server'
+import { Prisma, PrismaClient } from '@prisma/client'
 import { Hono } from 'hono'
 
 // ユーザーデータの型を定義
 type User = {
-  id: number
+  id: number | undefined
   name: string
   email: string
-  age: number
-  address: {
-    street: string
-    city: string
-    country: string
-  }
 }
 
 const app = new Hono()
@@ -20,7 +15,19 @@ const app = new Hono()
 app.get('/', (c) => {
   return c.text('Hello Hono!')
 })
-
+app.get('/user/add', async (c) => {
+  const prisma = new PrismaClient()
+  const user: User = {
+    id:2322,
+    email: 'bob@example.com',
+    name: 'Bob',
+  };
+  
+  const createUser = await prisma.user.create({
+    data: user
+  });
+  return c.text('Hello Hono!')
+})
 // /api/v1/userエンドポイント
 app.get('/api/v1/user', (c) => {//
   // 仮のユーザーデータを型に基づいて作成
@@ -28,12 +35,6 @@ app.get('/api/v1/user', (c) => {//
     id: 1,
     name: 'John Doe',
     email: 'john.doe@example.com',
-    age: 30,
-    address: {
-      street: '123 Main St',
-      city: 'Hono City',
-      country: 'HonoLand',
-    },
   }
   
   return c.json(fakeUserData) // JSONレスポンスを返す

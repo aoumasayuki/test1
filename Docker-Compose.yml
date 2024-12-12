@@ -5,6 +5,12 @@ services:
     build: ./mysql/    #Dockerfileからビルドすることを示す
     volumes:
       - ./mysql/DB:/docker-entrypoint-initdb.d  #初期データをマウントする場所
+      - ./mysql/db:/var/lib/mysql
     image: original_mysql_world # イメージの名前
+    ports:
+      - 3306:3306
     environment:
       - MYSQL_ROOT_PASSWORD=testpass   #コンテナ内のMySQLを起動する際のパスワードを設定
+      - MYSQL_DATABASE=hoge-hoge-database 
+      - MYSQL_USER=masa2013
+      - MYSQL_PASSWORD=mypass  
