@@ -1,0 +1,13 @@
+{
+    // フォーマッターの設定
+    //
+    // PrismaのスキーマファイルはフォーマッターとしてPrism.prismaを指定
+    "[prisma]": {
+      "editor.defaultFormatter": "Prisma.prisma"
+    },
+  
+    // 使用するTypeScriptのバージョンを指定
+    //
+    // TypeScriptのバージョンとして、プロジェクトのnode_modulesディレクトリにインストールされたものを使用
+    "typescript.tsdk": "node_modules/typescript/lib",
+  }
