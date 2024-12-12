@@ -9,7 +9,9 @@
     "hono": "^4.6.13"
   },
   "devDependencies": {
+    "@prisma/client": "^6.0.1",
     "@types/node": "^20.11.17",
+    "prisma": "^6.0.1",
     "tsx": "^4.7.1"
   }
 }
