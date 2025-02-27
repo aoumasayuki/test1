@@ -1,0 +1,9 @@
+hono
+@hono/node-server
+ws
+csv-parser
+dotenv
+prisma
+@prisma/client
+chartjs-node-canvas
+chart.js

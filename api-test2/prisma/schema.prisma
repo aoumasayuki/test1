@@ -14,9 +14,10 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model User {
-  id       Int      @id @default(autoincrement())
-  email    String   @unique
-  name     String?
-  }
+model CsvData {
+  id    Int      // CSVの識別子
+  Heart_Rate     Int      // データポイント
+  Timestamp  DateTime // 時刻
 
+  @@unique([id, Timestamp]) // 複合主キー
+}
