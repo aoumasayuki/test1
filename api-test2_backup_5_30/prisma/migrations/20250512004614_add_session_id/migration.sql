@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE `PhaseLog` ADD COLUMN `sessionId` INTEGER NOT NULL DEFAULT 1;
