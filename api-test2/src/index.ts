@@ -581,7 +581,6 @@ app.get("/graph", async (c) => {
 </html>
   `);
 });
-
 app.get("/graph/view", async (c) => {
   return c.html(`
 <!DOCTYPE html>

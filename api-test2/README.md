@@ -17,3 +17,8 @@ npx prisma studio
 npmでAdapterをインストール（サーバー側）
 （Node.js 環境でフロントのHTMLを生成しているので、サーバー側から提供する場合）
 npm install chartjs-adapter-date-fns
+```
+git add -A
+git commit -m "backup"
+git branch
+git push origin main

@@ -26,3 +26,13 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+#file
+src/backup/
+src/index Backup04/
+src/config/
+prisma/migrations/
+prisma/migrations_backup/
+
+#ts
+src/chatgpt.ts
