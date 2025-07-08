@@ -1,0 +1,422 @@
+[
+  {
+    "id": 82,
+    "startTime": "2025-05-19T07:03:28.127Z",
+    "endTime": "2025-05-19T07:04:33.812Z",
+    "createdAt": "2025-05-19T07:04:33.832Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 1
+  },
+  {
+    "id": 83,
+    "startTime": "2025-05-19T07:04:33.812Z",
+    "endTime": "2025-05-19T07:04:34.848Z",
+    "createdAt": "2025-05-19T07:04:34.849Z",
+    "gameDate": "1日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 1
+  },
+  {
+    "id": 84,
+    "startTime": "2025-05-19T07:04:34.848Z",
+    "endTime": "2025-05-19T07:08:09.159Z",
+    "createdAt": "2025-05-19T07:08:09.161Z",
+    "gameDate": "1日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 1
+  },
+  {
+    "id": 85,
+    "startTime": "2025-05-19T07:08:09.159Z",
+    "endTime": "2025-05-19T07:12:05.600Z",
+    "createdAt": "2025-05-19T07:12:05.601Z",
+    "gameDate": "2日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 1
+  },
+  {
+    "id": 86,
+    "startTime": "2025-05-19T07:12:05.600Z",
+    "endTime": "2025-05-19T07:20:05.600Z",
+    "createdAt": "2025-05-19T07:33:40.980Z",
+    "gameDate": "2日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 1
+  },
+  {
+    "id": 87,
+    "startTime": "2025-05-19T07:12:05.600Z",
+    "endTime": "2025-05-19T07:45:36.897Z",
+    "createdAt": "2025-05-19T07:45:36.898Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 88,
+    "startTime": "2025-05-19T07:45:36.897Z",
+    "endTime": "2025-05-19T07:45:37.969Z",
+    "createdAt": "2025-05-19T07:45:37.970Z",
+    "gameDate": "1日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 89,
+    "startTime": "2025-05-19T07:45:37.969Z",
+    "endTime": "2025-05-19T07:49:02.064Z",
+    "createdAt": "2025-05-19T07:49:02.065Z",
+    "gameDate": "1日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 90,
+    "startTime": "2025-05-19T07:49:02.064Z",
+    "endTime": "2025-05-19T07:54:20.972Z",
+    "createdAt": "2025-05-19T07:54:20.973Z",
+    "gameDate": "2日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 91,
+    "startTime": "2025-05-19T07:54:20.972Z",
+    "endTime": "2025-05-19T07:54:39.616Z",
+    "createdAt": "2025-05-19T07:54:39.617Z",
+    "gameDate": "2日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 92,
+    "startTime": "2025-05-19T07:54:39.616Z",
+    "endTime": "2025-05-19T07:56:45.856Z",
+    "createdAt": "2025-05-19T07:56:45.858Z",
+    "gameDate": "2日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 93,
+    "startTime": "2025-05-19T07:56:45.856Z",
+    "endTime": "2025-05-19T08:04:02.622Z",
+    "createdAt": "2025-05-19T08:04:02.623Z",
+    "gameDate": "3日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 94,
+    "startTime": "2025-05-19T08:04:02.622Z",
+    "endTime": "2025-05-19T08:06:16.918Z",
+    "createdAt": "2025-05-19T08:06:16.919Z",
+    "gameDate": "3日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 95,
+    "startTime": "2025-05-19T08:06:16.918Z",
+    "endTime": "2025-05-19T08:07:52.291Z",
+    "createdAt": "2025-05-19T08:07:52.292Z",
+    "gameDate": "3日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 96,
+    "startTime": "2025-05-19T08:07:52.291Z",
+    "endTime": "2025-05-19T08:08:03.417Z",
+    "createdAt": "2025-05-19T08:08:03.418Z",
+    "gameDate": "4日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 97,
+    "startTime": "2025-05-19T08:08:03.417Z",
+    "endTime": "2025-05-19T08:08:42.904Z",
+    "createdAt": "2025-05-19T08:08:42.905Z",
+    "gameDate": "4日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 98,
+    "startTime": "2025-05-19T08:08:42.904Z",
+    "endTime": "2025-05-19T08:10:32.557Z",
+    "createdAt": "2025-05-19T08:10:32.558Z",
+    "gameDate": "4日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 99,
+    "startTime": "2025-05-30T07:40:33.799Z",
+    "endTime": "2025-05-30T08:27:56.909Z",
+    "createdAt": "2025-05-30T08:27:56.911Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 1
+  },
+  {
+    "id": 100,
+    "startTime": "2025-05-30T09:44:17.507Z",
+    "endTime": "2025-05-30T09:44:20.248Z",
+    "createdAt": "2025-05-30T09:44:20.251Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 2
+  },
+  {
+    "id": 101,
+    "startTime": "2025-05-30T09:44:21.031Z",
+    "endTime": "2025-05-30T09:53:47.247Z",
+    "createdAt": "2025-05-30T09:53:47.249Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 3
+  },
+  {
+    "id": 102,
+    "startTime": "2025-05-30T09:53:47.247Z",
+    "endTime": "2025-05-30T09:53:49.556Z",
+    "createdAt": "2025-05-30T09:53:49.557Z",
+    "gameDate": "1日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 3
+  },
+  {
+    "id": 103,
+    "startTime": "2025-05-30T09:56:23.500Z",
+    "endTime": "2025-05-30T09:56:24.787Z",
+    "createdAt": "2025-05-30T09:56:24.788Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 4
+  },
+  {
+    "id": 104,
+    "startTime": "2025-05-30T09:56:24.787Z",
+    "endTime": "2025-05-30T09:56:27.344Z",
+    "createdAt": "2025-05-30T09:56:27.345Z",
+    "gameDate": "1日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 4
+  },
+  {
+    "id": 105,
+    "startTime": "2025-05-30T09:56:27.344Z",
+    "endTime": "2025-05-30T09:57:42.000Z",
+    "createdAt": "2025-05-30T09:57:42.001Z",
+    "gameDate": "1日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 4
+  },
+  {
+    "id": 106,
+    "startTime": "2025-05-30T09:57:42.000Z",
+    "endTime": "2025-05-30T09:59:37.577Z",
+    "createdAt": "2025-05-30T09:59:37.578Z",
+    "gameDate": "2日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 4
+  },
+  {
+    "id": 107,
+    "startTime": "2025-05-30T09:59:37.577Z",
+    "endTime": "2025-05-30T10:00:01.064Z",
+    "createdAt": "2025-05-30T10:00:01.065Z",
+    "gameDate": "2日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 4
+  },
+  {
+    "id": 108,
+    "startTime": "2025-05-30T10:00:01.064Z",
+    "endTime": "2025-05-30T10:00:36.694Z",
+    "createdAt": "2025-05-30T10:00:36.695Z",
+    "gameDate": "2日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 4
+  },
+  {
+    "id": 109,
+    "startTime": "2025-05-30T10:00:36.694Z",
+    "endTime": "2025-05-30T10:01:14.493Z",
+    "createdAt": "2025-05-30T10:01:14.494Z",
+    "gameDate": "3日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 4
+  },
+  {
+    "id": 110,
+    "startTime": "2025-05-30T10:01:14.493Z",
+    "endTime": "2025-05-30T10:01:16.637Z",
+    "createdAt": "2025-05-30T10:01:16.638Z",
+    "gameDate": "3日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 4
+  },
+  {
+    "id": 111,
+    "startTime": "2025-05-30T10:02:21.841Z",
+    "endTime": "2025-05-30T10:06:56.759Z",
+    "createdAt": "2025-05-30T10:06:56.761Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 5
+  },
+  {
+    "id": 112,
+    "startTime": "2025-05-30T10:06:56.759Z",
+    "endTime": "2025-05-30T10:07:05.139Z",
+    "createdAt": "2025-05-30T10:07:05.140Z",
+    "gameDate": "1日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 5
+  },
+  {
+    "id": 113,
+    "startTime": "2025-05-30T10:07:05.139Z",
+    "endTime": "2025-05-30T10:09:19.878Z",
+    "createdAt": "2025-05-30T10:09:19.879Z",
+    "gameDate": "1日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 5
+  },
+  {
+    "id": 114,
+    "startTime": "2025-05-30T10:10:53.958Z",
+    "endTime": "2025-05-30T10:12:42.635Z",
+    "createdAt": "2025-05-30T10:12:42.636Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 6
+  },
+  {
+    "id": 115,
+    "startTime": "2025-05-30T10:12:42.635Z",
+    "endTime": "2025-05-30T10:12:44.342Z",
+    "createdAt": "2025-05-30T10:12:44.343Z",
+    "gameDate": "1日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 6
+  },
+  {
+    "id": 116,
+    "startTime": "2025-05-30T10:12:44.342Z",
+    "endTime": "2025-05-30T10:14:34.566Z",
+    "createdAt": "2025-05-30T10:14:34.567Z",
+    "gameDate": "1日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 6
+  },
+  {
+    "id": 117,
+    "startTime": "2025-05-30T10:14:34.566Z",
+    "endTime": "2025-05-30T10:17:08.016Z",
+    "createdAt": "2025-05-30T10:17:08.017Z",
+    "gameDate": "2日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 6
+  },
+  {
+    "id": 118,
+    "startTime": "2025-05-30T10:17:08.016Z",
+    "endTime": "2025-05-30T10:17:21.239Z",
+    "createdAt": "2025-05-30T10:17:21.240Z",
+    "gameDate": "2日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 6
+  },
+  {
+    "id": 119,
+    "startTime": "2025-05-30T10:23:15.931Z",
+    "endTime": "2025-05-30T10:23:40.257Z",
+    "createdAt": "2025-05-30T10:23:40.258Z",
+    "gameDate": "1日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 7
+  },
+  {
+    "id": 120,
+    "startTime": "2025-05-30T10:23:40.257Z",
+    "endTime": "2025-05-30T10:24:23.985Z",
+    "createdAt": "2025-05-30T10:24:23.986Z",
+    "gameDate": "1日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 7
+  },
+  {
+    "id": 121,
+    "startTime": "2025-05-30T10:24:23.985Z",
+    "endTime": "2025-05-30T10:24:28.573Z",
+    "createdAt": "2025-05-30T10:24:28.574Z",
+    "gameDate": "1日目",
+    "gamePhase": "夜",
+    "game": "人狼",
+    "sessionId": 7
+  },
+  {
+    "id": 122,
+    "startTime": "2025-05-30T10:24:28.573Z",
+    "endTime": "2025-05-30T10:27:44.441Z",
+    "createdAt": "2025-05-30T10:27:44.442Z",
+    "gameDate": "2日目",
+    "gamePhase": "朝",
+    "game": "人狼",
+    "sessionId": 7
+  },
+  {
+    "id": 123,
+    "startTime": "2025-05-30T10:27:44.441Z",
+    "endTime": "2025-05-30T10:29:21.257Z",
+    "createdAt": "2025-05-30T10:29:21.258Z",
+    "gameDate": "2日目",
+    "gamePhase": "昼",
+    "game": "人狼",
+    "sessionId": 7
+  }
+]

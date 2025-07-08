@@ -1,0 +1,3 @@
+post_http.httpは疑似的なPostを再現できる
+
+post_http.http内のsendRequestを押す

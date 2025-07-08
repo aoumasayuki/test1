@@ -38,7 +38,7 @@ import fs from "fs";
 import { networkInterfaces } from "os";
 
 dotenv.config();
-const HEART_RATE_THRESHOLD = 120;
+const HEART_RATE_THRESHOLD = 85;
 
 const app = new Hono();
 const prisma = new PrismaClient();
@@ -152,6 +152,157 @@ wss.on("connection", (ws) => {
   });
 });
 let currentSessionId = 0;  // 最初のセッション
+
+app.get("/set-game", async (c) => {
+  const options = gameConfigs.map((g: { game: any; }) => `<option value="${g.game}">${g.game}</option>`).join("\n");
+  return c.html(`
+    <form method="POST" action="/select-game">
+      <label>ゲームを選択:</label>
+      <select name="game">${options}</select>
+      <button type="submit">設定</button>
+    </form>
+  `);
+});
+app.post("/select-game", async (c) => {
+  const body = await c.req.parseBody();
+
+  const raw = body["game"];
+  if (typeof raw !== "string") {
+    return c.text("ゲームの形式が正しくありません", 400);
+  }
+  const selectedGame = raw;
+  const found = gameConfigs.find((g: { game: string }) => g.game === selectedGame);
+  if (!found) {
+    return c.text("無効なゲームが選択されました。", 400);
+  }
+
+  currentGame = selectedGame;
+  currentDay = 1;
+  currentPhaseIndex = 0;
+  canGoBack = true;
+  currentSessionId++;
+
+  // ✅ 再計算
+  currentConfig = found;
+  dateLabel = currentConfig.setings.scene;
+  phaseOrder.length = 0; // 一旦中身を空にしてから再設定
+  Object.entries(currentConfig.setings.time).forEach(([, value]) => phaseOrder.push(value));
+
+  return c.redirect("/set-detail");
+});
+
+app.get("/set-detail", async (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="UTF-8">
+      <title>ゲーム状態設定</title>
+      <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        button { padding: 10px; font-size: 18px; margin: 10px; }
+      </style>
+    </head>
+    <body>
+      <h1>ゲーム状態の設定</h1>
+      <h2>現在: ${currentDay}${dateLabel} - ${phaseOrder[currentPhaseIndex]}</h2>
+      <button onclick="updateGameState()">次のフェーズへ</button>
+      <button onclick="previousGameState()">前のフェーズへ</button>
+      <button onclick="resetGame()">リセット (${currentDay}${dateLabel}の${phaseOrder[0]})</button>
+      <script>
+        function updateGameState() {
+          fetch('/update-detail', { method: 'POST' }).then(() => location.reload());
+        }
+        function previousGameState() {
+          fetch('/previous-detail', { method: 'POST' }).then(() => location.reload());
+        }
+        function resetGame() {
+          fetch('/reset-detail', { method: 'POST' }).then(() => location.reload());
+        }
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+// フェーズ進行
+app.post("/update-detail", async (c) => {
+  const dateLabel = getDateLabel();
+  const phaseOrder = getPhaseOrder();
+  const gameDate = `${currentDay}${dateLabel}`;
+  const gamePhase = phaseOrder[currentPhaseIndex];
+  const now = new Date();
+
+  if (!canGoBack) {
+    currentStartTime = now;
+    const lastLog = await prisma.phaseLog.findFirst({
+      where: { sessionId: currentSessionId },
+      orderBy: { id: "desc" },
+    });
+    if (lastLog) {
+      await prisma.phaseLog.update({
+        where: { id: lastLog.id },
+        data: { endTime: now },
+      });
+    }
+  } else {
+    await prisma.phaseLog.create({
+      data: {
+        sessionId: currentSessionId,
+        game: currentGame,
+        gameDate,
+        gamePhase: String(gamePhase),
+        startTime: currentStartTime,
+        endTime: now
+      }
+    });
+    currentStartTime = now;
+  }
+
+  canGoBack = true;
+  currentPhaseIndex++;
+  if (currentPhaseIndex >= phaseOrder.length) {
+    currentPhaseIndex = 0;
+    currentDay++;
+  }
+  return c.text("フェーズを進めました。");
+});
+
+app.post("/previous-detail", async (c) => {
+  if (!canGoBack) return c.text("既に戻っています。次のフェーズに進むまで戻れません。", 400);
+
+  currentPhaseIndex--;
+  if (currentPhaseIndex < 0) {
+    currentDay = Math.max(1, currentDay - 1);
+    currentPhaseIndex = phaseOrder.length - 1;
+  }
+
+  const lastLog = await prisma.phaseLog.findFirst({
+    where: { sessionId: currentSessionId },
+    orderBy: { id: "desc" },
+  });
+  if (lastLog) {
+    await prisma.phaseLog.update({
+      where: { id: lastLog.id },
+      data: { endTime: null },
+    });
+  }
+
+  canGoBack = false;
+  return c.text("前のフェーズに戻りました。");
+});
+
+app.post("/reset-detail", async (c) => {
+  currentDay = 1;
+  currentPhaseIndex = 0;
+  currentSessionId++;
+  canGoBack = true;
+  const now = new Date();
+  currentStartTime = now;
+  return c.text(`ゲームをリセットしました。新しいセッション: ${currentSessionId}`);
+});
+
+
 app.post("/upload", async (c) => {
   try {
     let csvData: string;
@@ -210,246 +361,10 @@ app.post("/upload", async (c) => {
   }
 });
 
-app.get("/set-game", async (c) => {
-  const options = gameConfigs.map((g: { game: any; }) => `<option value="${g.game}">${g.game}</option>`).join("\n");
-  return c.html(`
-    <form method="POST" action="/select-game">
-      <label>ゲームを選択:</label>
-      <select name="game">${options}</select>
-      <button type="submit">設定</button>
-    </form>
-  `);
-});
-app.post("/select-game", async (c) => {
-  const body = await c.req.parseBody();
-
-  const raw = body["game"];
-  if (typeof raw !== "string") {
-    return c.text("ゲームの形式が正しくありません", 400);
-  }
-  const selectedGame = raw;
-  const found = gameConfigs.find((g: { game: string }) => g.game === selectedGame);
-  if (!found) {
-    return c.text("無効なゲームが選択されました。", 400);
-  }
-
-  currentGame = selectedGame;
-  currentDay = 1;
-  currentPhaseIndex = 0;
-  canGoBack = true;
-  currentSessionId++;
-
-  // ✅ 再計算
-  currentConfig = found;
-  dateLabel = currentConfig.setings.scene;
-  phaseOrder.length = 0; // 一旦中身を空にしてから再設定
-  Object.entries(currentConfig.setings.time).forEach(([, value]) => phaseOrder.push(value));
-
-  return c.redirect("/set-detail");
-});
-// GET: /set-detail
-// GET /set-detail
-app.get("/set-detail", async (c) => {
-  // ① 使用済み sessionId の取得
-  const used = await prisma.phaseLog.findMany({
-    distinct: ["sessionId"],
-    select: { sessionId: true },
-  });
-  const usedIds = used.map(r => r.sessionId);
-  const maxOption = Math.max(currentSessionId, ...usedIds, 0) + 5;
-  const sessionOptions = Array.from({ length: maxOption }, (_, i) => i + 1)
-    .map(n => `
-      <option value="${n}" ${usedIds.includes(n) ? "disabled" : ""}>
-        ${n}${usedIds.includes(n) ? "（使用済み）" : ""}
-      </option>
-    `).join("");
-
-  // ② 現在のフェーズ表示ラベル
-  const config         = getCurrentGameConfig();
-  const sceneLabel     = config.setings.scene;
-  const phaseNames     = Object.values(config.setings.time);
-  const currentPhase   = phaseNames[currentPhaseIndex]  || "";
-  const statusLabel    = `${currentSessionId}試合目・${currentDay}${sceneLabel}・${currentPhase}`;
-
-  // ③ センサーIDを1～10に固定
-  const sensorIds = Array.from({ length: 10 }, (_, i) => i + 1);
-
-  // ④ 既登録の Participant 取得
-  const existing = await prisma.participant.findMany({
-    where: { sessionId: currentSessionId }
-  });
-  const nameMap: Record<number,string> = {};
-  existing.forEach(p => { nameMap[p.sensorId] = p.name });
-
-  // ⑤ テーブル行を組み立て
-  const rows = sensorIds.map(id => `
-    <tr>
-      <td>${id}</td>
-      <td>
-        <input 
-          type="text" 
-          name="name_${id}" 
-          value="${nameMap[id] || ""}" 
-          placeholder="名前を入力" 
-        />
-      </td>
-    </tr>
-  `).join("");
-
-  return c.html(`
-  <!DOCTYPE html>
-  <html lang="ja">
-  <head><meta charset="UTF-8"><title>ゲーム状態設定</title></head>
-  <body style="font-family:Arial;text-align:center;padding:20px">
-
-    <h1>ゲーム状態の設定</h1>
-    <h2>現在: ${statusLabel}</h2>
-
-    <form method="POST" action="/set-detail">
-      <!-- セッション切替 -->
-      <div>
-        <label>セッションIDを選択：</label>
-        <select name="sessionId">
-          ${sessionOptions}
-        </select>
-      </div>
-      <br/>
-
-      <!-- 参加者登録 (Sensor ID 1～10) -->
-      <table border="1" cellpadding="4" style="margin:0 auto;">
-        <tr><th>Sensor ID</th><th>名前</th></tr>
-        ${rows}
-      </table>
-      <br/>
-
-      <button type="submit">セッション開始／名前保存</button>
-    </form>
-
-    <!-- フェーズ操作ボタン -->
-    <div style="margin-top:20px;">
-      <button onclick="fetch('/update-detail',{method:'POST'}).then(()=>location.reload())">
-        次のフェーズへ
-      </button>
-      <button onclick="fetch('/previous-detail',{method:'POST'}).then(()=>location.reload())">
-        前のフェーズへ
-      </button>
-      <button onclick="fetch('/reset-detail',{method:'POST'}).then(()=>location.reload())">
-        リセット
-      </button>
-    </div>
-  </body>
-  </html>`
-);});
-// POST /set-detail
-app.post("/set-detail", async (c) => {
-  const body = await c.req.parseBody();
-  const sid  = parseInt(body.sessionId as string, 10);
-  if (isNaN(sid)) {
-    return c.text("無効な sessionId です", 400);
-  }
-
-  // Participant に upsert (Sensor ID 1～10)
-  for (let sensorId = 1; sensorId <= 10; sensorId++) {
-    const key = `name_${sensorId}`;
-    const name = String((body as any)[key] || "").trim();
-    if (name) {
-      await prisma.participant.upsert({
-        where: {
-          sessionId_sensorId: { sessionId: sid, sensorId }
-        },
-        create: { sessionId: sid, sensorId, name },
-        update: { name }
-      });
-    }
-  }
-
-  // サーバー側セッション切り替え＆初期化
-  currentSessionId   = sid;
-  currentDay         = 1;
-  currentPhaseIndex  = 0;
-  canGoBack          = true;
-  currentStartTime   = new Date();
-
-  return c.redirect("/set-detail");
-});
-// フェーズ進行
-app.post("/update-detail", async (c) => {
-  const dateLabel = getDateLabel();
-  const phaseOrder = getPhaseOrder();
-  const gameDate = `${currentDay}${dateLabel}`;
-  const gamePhase = phaseOrder[currentPhaseIndex];
-  const now = new Date();
-
-  if (!canGoBack) {
-    currentStartTime = now;
-    const lastLog = await prisma.phaseLog.findFirst({
-      where: { sessionId: currentSessionId },
-      orderBy: { id: "desc" },
-    });
-    if (lastLog) {
-      await prisma.phaseLog.update({
-        where: { id: lastLog.id },
-        data: { endTime: now },
-      });
-    }
-  } else {
-    await prisma.phaseLog.create({
-      data: {
-        sessionId: currentSessionId,
-        game: currentGame,
-        gameDate,
-        gamePhase: String(gamePhase),
-        startTime: currentStartTime,
-        endTime: now
-      }
-    });
-    currentStartTime = now;
-  }
-
-  canGoBack = true;
-  currentPhaseIndex++;
-  if (currentPhaseIndex >= phaseOrder.length) {
-    currentPhaseIndex = 0;
-    currentDay++;
-  }
-  return c.text("フェーズを進めました。");
-});
-app.post("/previous-detail", async (c) => {
-  if (!canGoBack) return c.text("既に戻っています。次のフェーズに進むまで戻れません。", 400);
-
-  currentPhaseIndex--;
-  if (currentPhaseIndex < 0) {
-    currentDay = Math.max(1, currentDay - 1);
-    currentPhaseIndex = phaseOrder.length - 1;
-  }
-
-  const lastLog = await prisma.phaseLog.findFirst({
-    where: { sessionId: currentSessionId },
-    orderBy: { id: "desc" },
-  });
-  if (lastLog) {
-    await prisma.phaseLog.update({
-      where: { id: lastLog.id },
-      data: { endTime: null },
-    });
-  }
-
-  canGoBack = false;
-  return c.text("前のフェーズに戻りました。");
-});
-
-app.post("/reset-detail", async (c) => {
-  currentDay = 1;
-  currentPhaseIndex = 0;
-  currentSessionId++;
-  canGoBack = true;
-  const now = new Date();
-  currentStartTime = now;
-  return c.text(`ゲームをリセットしました。新しいセッション: ${currentSessionId}`);
-});
 
 // ✅ WebSocket 用のグラフデータを取得する
 // 残りのコード（/graph など）は変更不要
+
 // ✅ テーブルをリセットする
 app.get('/reset-table', async (c) => {
   try {
@@ -460,6 +375,7 @@ app.get('/reset-table', async (c) => {
     return c.text('Failed to reset table.', 500);
   }
 });
+
 app.get('/delete-csv', async (c) => {
   const idParam = c.req.query('id');
   if (!idParam) {
@@ -489,8 +405,9 @@ app.get('/delete-csv', async (c) => {
 
 // ✅ WebSocket 用のグラフデータを取得する
 app.get("/graph", async (c) => {
-  // 1) フェーズ選択用データ取得
-  const logs = await prisma.phaseLog.findMany({ orderBy: { startTime: "asc" } });
+  // フェーズ選択のオプション（既存のまま）
+  const logs       = await prisma.phaseLog.findMany({ orderBy: { startTime: "asc" } });
+  const ids        = await prisma.csvData.findMany({ distinct: ["id"], select: { id: true } });
   const phaseOptions = logs.map(log => `
     <option
       value="${log.gameDate}-${log.gamePhase}"
@@ -501,8 +418,8 @@ app.get("/graph", async (c) => {
     </option>
   `).join("");
 
-  // 2) ゲーム内日付選択用データ取得
-  const dateList = await prisma.phaseLog.findMany({
+  // ★ ここを「calendar」ではなく、gameDateで埋める
+  const dateList   = await prisma.phaseLog.findMany({
     distinct: ["gameDate"],
     select: { gameDate: true }
   });
@@ -510,27 +427,12 @@ app.get("/graph", async (c) => {
     .map(d => `<option value="${d.gameDate}">${d.gameDate}</option>`)
     .join("");
 
-  // 3) ID選択用データ取得
-  const ids = await prisma.csvData.findMany({ distinct: ["id"], select: { id: true } });
-  const idOptions = ids.map(o => `<option value="${o.id}">${o.id}</option>`).join("");
+  const idOptions  = ids.map(o=>`<option value="${o.id}">${o.id}</option>`).join("");
 
-  // 4) セッション選択用データ取得（リアルタイムグラフ用）
-  const sessions = await prisma.phaseLog.findMany({
-    distinct: ["sessionId"],
-    select: { sessionId: true }
-  });
-  const sessionOptions = sessions
-    .map(s => `<option value="${s.sessionId}">${s.sessionId}</option>`)
-    .join("");
-
-  // HTML 出力
   return c.html(`
 <!DOCTYPE html>
 <html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <title>HR Graph Selector</title>
-</head>
+<head><meta charset="UTF-8"><title>HR Graph Selector</title></head>
 <body>
 
   <h2>フェーズとIDを選択してください</h2>
@@ -547,13 +449,7 @@ app.get("/graph", async (c) => {
   <select id="dateIdSelect">${idOptions}</select>
   <button id="btnDate">表示</button>
 
-  <h2>リアルタイム試合グラフ</h2>
-  <label>セッションID:</label>
-  <select id="sessionSelect">${sessionOptions}</select>
-  <button id="btnSession">表示</button>
-
   <script>
-    // フェーズ表示ボタン
     document.getElementById("btnPhase").onclick = () => {
       const phaseEl   = document.getElementById("phaseSelect");
       const phase     = phaseEl.value;
@@ -563,17 +459,10 @@ app.get("/graph", async (c) => {
       location.href = \`/graph/view?phase=\${encodeURIComponent(phase)}&sessionId=\${sessionId}&id=\${id}&game=\${encodeURIComponent(game)}\`;
     };
 
-    // 日付表示ボタン
     document.getElementById("btnDate").onclick = () => {
-      const gameDate = document.getElementById("dateSelect").value;
+      const gameDate = document.getElementById("dateSelect").value;  // 例: "2日目"
       const id       = document.getElementById("dateIdSelect").value;
       location.href = \`/graph/date/\${encodeURIComponent(gameDate)}?id=\${id}\`;
-    };
-
-    // リアルタイム試合グラフ表示ボタン
-    document.getElementById("btnSession").onclick = () => {
-      const sessionId = document.getElementById("sessionSelect").value;
-      location.href = \`/graph/session/\${sessionId}\`;
     };
   </script>
 
@@ -660,6 +549,8 @@ app.get("/graph/view", async (c) => {
 </html>
   `);
 });
+
+
 app.get("/graph/date/:day", async (c) => {
   const dayLabel = c.req.param("day");   // e.g. "2日目"
   const idParam  = c.req.query("id");
@@ -769,271 +660,6 @@ app.get("/graph/date/:day", async (c) => {
 </html>
   `);
 });
-/*app.get("/graph/session/:sessionId", async (c) => {
-  const sidParam = c.req.param("sessionId");
-  const sessionId = parseInt(sidParam, 10);
-  if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
-
-  // フェーズ終了時刻を取得
-  const phaseLogs = await prisma.phaseLog.findMany({
-    where: { sessionId, endTime: { not: null } },
-    orderBy: { startTime: "asc" },
-    select: { gameDate: true, gamePhase: true, endTime: true }
-  });
-  const annotations = phaseLogs.map((log, idx) => ({
-    key: `line${idx}`,
-    time: log.endTime!.toISOString(),
-    label: `${log.gameDate}${log.gamePhase} 終了`
-  }));
-
-  return c.html(`
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <title>Session ${sessionId} Live Graph</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.1.0"></script>
-</head>
-<body>
-  <h2>Session ${sessionId} のリアルタイム心拍数</h2>
-  <canvas id="liveChart" width="800" height="400"></canvas>
-  <script>
-  (async function(){
-    const sessionId = ${sessionId};
-    const ctx = document.getElementById("liveChart").getContext("2d");
-    let chart = null;
-
-    // annotation のベース設定
-    const phaseAnnotations = ${JSON.stringify(annotations)};
-    const baseAnnotations = phaseAnnotations.reduce((a, log) => {
-      a[log.key] = {
-        type: 'line',
-        xMin: new Date(log.time),
-        xMax: new Date(log.time),
-        borderColor: 'rgba(255,99,132,0.8)',
-        borderWidth: 2,
-        label: {
-          content: log.label,
-          enabled: true,
-          position: 'start',
-          backgroundColor: 'rgba(255,99,132,0.2)',
-          color: '#000'
-        }
-      };
-      return a;
-    }, {});
-
-    async function fetchData(){
-      // 1) 参加者取得
-      const resP = await fetch(\`/api/participants?sessionId=\${sessionId}\`);
-      const parts = resP.ok ? await resP.json() : [];
-      const nameMap = {};
-      parts.forEach(p=> nameMap[p.sensorId] = p.name);
-
-      // 2) 心拍データ取得
-      const resH = await fetch(\`/api/heartrate?sessionId=\${sessionId}\`);
-      if (!resH.ok) return;
-      const { data } = await resH.json();
-
-      // 3) 非表示状態を保存
-      const prevHidden = {};
-      if (chart) {
-        chart.data.datasets.forEach((ds,i) => {
-          prevHidden[ds.label] = chart.getDatasetMeta(i).hidden;
-        });
-      }
-
-      // 4) データセット構築
-      const groups = {};
-      data.forEach(pt => {
-        if (!groups[pt.id]) groups[pt.id] = [];
-        groups[pt.id].push({ x: new Date(pt.Timestamp), y: pt.Heart_Rate });
-      });
-      const datasets = Object.entries(groups).map(([id, arr]) => {
-        const label = nameMap[id] ? \`\${nameMap[id]} (ID:\${id})\` : \`ID:\${id}\`;
-        return {
-          label,
-          data: arr,
-          fill: false,
-          borderColor: \`hsl(\${(id*137)%360},100%,50%)\`,
-          spanGaps: true
-        };
-      });
-
-      // 5) 初回／更新
-      if (!chart) {
-        chart = new Chart(ctx, {
-          type: 'line',
-          data: { datasets },
-          options: {
-            responsive: true,
-            plugins: { annotation: { annotations: baseAnnotations } },
-            scales: {
-              x: { type:'time', time:{ unit:'minute' }, title:{ display:true, text:'Time' } },
-              y: { title:{ display:true, text:'BPM' } }
-            }
-          }
-        });
-      } else {
-        chart.data.datasets = datasets;
-        // 6) 保存しておいた非表示フラグを復元
-        chart.data.datasets.forEach((ds, i) => {
-          const key = ds.label;
-          if (prevHidden.hasOwnProperty(key)) {
-            chart.getDatasetMeta(i).hidden = prevHidden[key];
-          }
-        });
-        chart.update();
-      }
-    }
-
-    fetchData();
-    setInterval(fetchData, 5000);
-  })();
-  </script>
-</body>
-</html>
-  `);
-});*/
-// GET /graph/session/division/:sessionId
-app.get("/graph/session/:sessionId", async (c) => {
-  const sidParam = c.req.param("sessionId");
-  const sessionId = parseInt(sidParam, 10);
-  if (isNaN(sessionId)) {
-    return c.text("Invalid sessionId", 400);
-  }
-
-  // フェーズ終了時刻を取得（全チャート共通の縦線）
-  const phaseLogs = await prisma.phaseLog.findMany({
-    where: { sessionId, endTime: { not: null } },
-    orderBy: { startTime: "asc" },
-    select: { gameDate: true, gamePhase: true, endTime: true }
-  });
-  const annotations = phaseLogs.map((log, idx) => ({
-    key: `line${idx}`,
-    time: log.endTime!.toISOString(),
-    label: `${log.gameDate}${log.gamePhase} 終了`
-  }));
-
-  return c.html(`
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <title>Session ${sessionId} - 4分割グラフ</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.1.0"></script>
-  <style>
-    body { font-family: Arial; text-align: center; padding: 20px; }
-    .grid { 
-      display: grid; 
-      grid-template-columns: 1fr 1fr; 
-      grid-template-rows: 1fr 1fr;
-      gap: 24px;
-      max-width: 1200px;
-      margin: auto;
-    }
-    canvas { background: #fafafa; border: 1px solid #ddd; }
-    h1 { margin-bottom: 16px; }
-  </style>
-</head>
-<body>
-  <h1>Session ${sessionId} のリアルタイム 4分割心拍グラフ</h1>
-  <div class="grid">
-    <div><h3>ID 1</h3><canvas id="chart1" width="400" height="300"></canvas></div>
-    <div><h3>ID 2</h3><canvas id="chart2" width="400" height="300"></canvas></div>
-    <div><h3>ID 3</h3><canvas id="chart3" width="400" height="300"></canvas></div>
-    <div><h3>ID 4</h3><canvas id="chart4" width="400" height="300"></canvas></div>
-  </div>
-
-  <script>
-  (async function(){
-    const sessionId = ${sessionId};
-    const ctxs = [
-      document.getElementById("chart1").getContext("2d"),
-      document.getElementById("chart2").getContext("2d"),
-      document.getElementById("chart3").getContext("2d"),
-      document.getElementById("chart4").getContext("2d"),
-    ];
-    const charts = [null, null, null, null];
-
-    // annotation 共通設定
-    const baseAnnotations = ${JSON.stringify(annotations)}.reduce((acc,a)=>{
-      acc[a.key] = {
-        type: 'line',
-        xMin: new Date(a.time),
-        xMax: new Date(a.time),
-        borderColor: 'rgba(255,99,132,0.8)',
-        borderWidth: 2,
-        label: {
-          content: a.label,
-          enabled: true,
-          position: 'start',
-          backgroundColor: 'rgba(255,99,132,0.2)',
-          color: '#000'
-        }
-      };
-      return acc;
-    }, {});
-
-    // 指定IDのデータを取得、チャート更新
-    async function updateChart(sensorId, index) {
-      const res = await fetch(\`/api/heartrate?sessionId=\${sessionId}&id=\${sensorId}\`);
-      if (!res.ok) return;
-      const json = await res.json();
-      const data = json.data.map(d => ({ x: new Date(d.Timestamp), y: d.Heart_Rate }));
-
-      if (!charts[index]) {
-        charts[index] = new Chart(ctxs[index], {
-          type: 'line',
-          data: { datasets: [{
-            label: \`Sensor \${sensorId}\`,
-            data,
-            borderColor: 'hsl(' + ((sensorId*137)%360) + ',100%,50%)',
-            fill: false,
-            spanGaps: true
-          }]},
-          options: {
-            responsive: true,
-            plugins: {
-              annotation: { annotations: baseAnnotations }
-            },
-            scales: {
-              x: {
-                type: 'time',
-                time: { unit: 'minute' },
-                title: { display: true, text: 'Time' },
-                grid: { display: true, color: 'rgba(0,0,0,0.1)' }
-              },
-              y: {
-                title: { display: true, text: 'BPM' },
-                grid: { display: true, color: 'rgba(0,0,0,0.1)' },
-                min: 40
-              }
-            }
-          }
-        });
-      } else {
-        charts[index].data.datasets[0].data = data;
-        charts[index].update();
-      }
-    }
-
-    // 初回 & 5秒ごとに更新
-    const sensorIds = [1,2,3,4];
-    sensorIds.forEach((id,i)=> updateChart(id,i));
-    setInterval(()=> sensorIds.forEach((id,i)=> updateChart(id,i)), 5000);
-  })();
-  </script>
-</body>
-</html>
-  `);
-});
-
-
 
 
 //api設計
@@ -1112,8 +738,7 @@ if (phaseKey) {
   if (sessionIdParam) {
     const sessionId = parseInt(sessionIdParam, 10);
     if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
-  
-    // ---- ① 現在のセッションのフェーズログ（終了時刻があるもの）を取得 ----
+
     const logs = await prisma.phaseLog.findMany({
       where: {
         sessionId,
@@ -1122,34 +747,12 @@ if (phaseKey) {
       },
       orderBy: { startTime: "asc" },
     });
-  
-    if (logs.length === 0) {
-      return c.json({ source: "session", sessionId, count: 0, data: [] });
-    }
-  
-    // ---- ② 次のセッションの開始時刻を探す ----
-    const nextLog = await prisma.phaseLog.findFirst({
-      where: { sessionId: { gt: sessionId } },
-      orderBy: { startTime: "asc" },
-    });
-    // nextLog?.startTime があれば次セッション開始、それ以外は「現在時刻」まで
-    const nextSessionStart = nextLog?.startTime ?? new Date();
-  
-    // ---- ③ 取得レンジを組み立て ----
+
     const ranges = logs.map(log => ({
       start: log.startTime,
-      end:   log.endTime!,        // 終了時刻は not null なので安心
+      end: log.endTime!,
     }));
-    // 最終フェーズ終了後のレンジを追加
-    const lastEnd = logs[logs.length - 1].endTime!;
-    if (lastEnd < nextSessionStart) {
-      ranges.push({
-        start: lastEnd,
-        end:   nextSessionStart,
-      });
-    }
-  
-    // ---- ④ 各レンジでデータを並列取得 ----
+
     const dataChunks = await Promise.all(
       ranges.map(range =>
         prisma.csvData.findMany({
@@ -1164,10 +767,11 @@ if (phaseKey) {
         })
       )
     );
-    const allData = dataChunks.flat();
-  
-    return c.json({ source: "session", sessionId, count: allData.length, data: allData });
+
+    const flatData = dataChunks.flat();
+    return c.json({ source: "session", sessionId, game, count: flatData.length, data: flatData });
   }
+
   // ✅ パラメータがIDのみ or 完全未指定 → 全件返す（開発用）
   const allData = await prisma.csvData.findMany({
     where: id ? { id } : {},
@@ -1215,7 +819,7 @@ app.get('/api/heartrate/stats/summary', async (c) => {
     const max = count ? Math.max(...heartRates) : null;
     return c.json({ count, average, min, max });
   } catch { return c.text("Bad request", 400); }
-});// GET /api/phaseLog?sessionId=XXX
+});
 
 app.get("/api/heartrate/alert", async (c) => {
   // Optional: since パラメータで、ある時刻以降のアラートのみ取得
@@ -1253,33 +857,7 @@ app.get("/api/heartrate/alert", async (c) => {
     }))
   });
 });
-app.get("/api/phaseLog", async (c) => {
-  const sid = parseInt(c.req.query("sessionId") || "", 10);
-  if (isNaN(sid)) return c.text("Invalid sessionId", 400);
 
-  const logs = await prisma.phaseLog.findMany({
-    where: { sessionId: sid, endTime: { not: null } },
-    orderBy: { startTime: "asc" },
-    select: {
-      gameDate: true,
-      gamePhase: true,
-      endTime: true
-    }
-  });
-  // 例: [{gameDate:"1日目", gamePhase:"夜", endTime:Date}, ...]
-  return c.json(logs);
-});
-app.get("/api/participants", async (c) => {
-  const sid = parseInt(c.req.query("sessionId") || "", 10);
-  if (isNaN(sid)) return c.text("Invalid sessionId", 400);
-
-  const participants = await prisma.participant.findMany({
-    where: { sessionId: sid },
-    select: { sensorId: true, name: true }
-  });
-  // 例: [ { sensorId: 1, name: "太郎" }, ... ]
-  return c.json(participants);
-});
 const server = serve({ fetch: app.fetch, port: 3000 });
 server.on("upgrade", (request, socket, head) => {
     if (request.url === "/ws") {

@@ -21,13 +21,7 @@ model StateTimestamps {
   stateName String
   startTime DateTime
 }
-model AnomalyLog {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  timestamp DateTime
-  heartRate Float
-  reason    String
-}
+
 model PhaseLog {
   id        Int       @id @default(autoincrement())
   startTime DateTime
@@ -37,13 +31,4 @@ model PhaseLog {
   gamePhase String
   game      String
   sessionId Int       @default(1)
-}
-model Participant {
-  sessionId Int
-  sensorId  Int
-  name      String
-  createdAt DateTime @default(now())
-
-  @@id([sessionId, sensorId])
-  @@index([sensorId])
 }
