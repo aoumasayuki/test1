@@ -15,7 +15,7 @@ const prisma = new PrismaClient();
 
 async function backup() {
   try {
-    const backupData = await prisma.phaseLog.findMany({
+    const backupData = await prisma.csvData.findMany({
       // 必要に応じて where 条件を追加
     });
 

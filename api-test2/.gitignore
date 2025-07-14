@@ -29,7 +29,7 @@ lerna-debug.log*
 
 #file
 src/backup/
-src/index Backup04/
+src/index_Backup04/
 src/config/
 prisma/migrations/
 prisma/migrations_backup/
