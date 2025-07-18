@@ -247,8 +247,6 @@ app.post("/select-game", async (c) => {
 
   return c.redirect("/set-detail");
 });
-// GET: /set-detail
-// GET /set-detail
 app.get("/set-detail", async (c) => {
   // ① 使用済み sessionId の取得
   const used = await prisma.phaseLog.findMany({
@@ -436,7 +434,6 @@ app.post("/update-detail", async (c) => {
   }
   return c.text("フェーズを進めました。");
 });
-
 app.post("/previous-detail", async (c) => {
   if (!canGoBack) return c.text("既に戻っています。次のフェーズに進むまで戻れません。", 400);
 
@@ -460,7 +457,6 @@ app.post("/previous-detail", async (c) => {
   canGoBack = false;
   return c.text("前のフェーズに戻りました。");
 });
-
 app.post("/reset-detail", async (c) => {
   currentDay = 1;
   currentPhaseIndex = 0;
@@ -470,10 +466,6 @@ app.post("/reset-detail", async (c) => {
   currentStartTime = now;
   return c.text(`ゲームをリセットしました。新しいセッション: ${currentSessionId}`);
 });
-
-// ✅ WebSocket 用のグラフデータを取得する
-// 残りのコード（/graph など）は変更不要
-// ✅ テーブルをリセットする
 app.get('/reset-table', async (c) => {
   try {
     await prisma.$executeRawUnsafe(`TRUNCATE TABLE CsvData`);
@@ -842,7 +834,7 @@ app.get("/graph/date/:day", async (c) => {
 </html>
   `);
 });
-/*app.get("/graph/session/:sessionId", async (c) => {
+app.get("/graph/session/:sessionId", async (c) => {
   const sidParam = c.req.param("sessionId");
   const sessionId = parseInt(sidParam, 10);
   if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
@@ -888,7 +880,7 @@ app.get("/graph/date/:day", async (c) => {
     const nameMap    = ${JSON.stringify(nameMap)};
     const summaryMap = ${JSON.stringify(summaryMap)};
     const grid       = document.getElementById("grid");
-    const charts: Record<number, Chart> = {};
+    const charts = {};  // ← 型注釈削除
 
     async function fetchAndRender() {
       // 最新心拍データ
@@ -897,8 +889,9 @@ app.get("/graph/date/:day", async (c) => {
       const { data } = await resH.json();
 
       // IDごとグループ化 & 最新値取得
-      const groups: Record<number, {x:Date,y:number}[]> = {};
-      const latest: Record<number,number> = {};
+      const groups = {};
+      const latest = {};
+
       data.forEach(pt => {
         if (!groups[pt.id]) groups[pt.id] = [];
         groups[pt.id].push({ x: new Date(pt.Timestamp), y: pt.Heart_Rate });
@@ -977,8 +970,8 @@ app.get("/graph/date/:day", async (c) => {
 </body>
 </html>
   `);
-});*/
-app.get("/graph/session/:sessionId", async (c) => {
+});
+/*app.get("/graph/session/:sessionId", async (c) => {
   const sidParam = c.req.param("sessionId");
   const sessionId = parseInt(sidParam, 10);
   if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
@@ -999,32 +992,37 @@ app.get("/graph/session/:sessionId", async (c) => {
   const baseline: Record<number, number> = {};
   summaries.forEach(s => baseline[s.sensorId] = s.avgHeartRate);
 
-  // フェーズログ取得（annotation 用）
+  // フェーズログ取得（annotation用・完了済み＋進行中を含む）
   const phaseLogs = await prisma.phaseLog.findMany({
     where: { sessionId },
     orderBy: { startTime: "asc" },
-    select: { gameDate: true, gamePhase: true, startTime: true, endTime: true }
+    select: {
+      gameDate:  true,
+      gamePhase: true,
+      startTime: true,
+      endTime:   true
+    }
   });
 
   return c.html(`
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>Session ${sessionId} 分割グラフ（初めと現在フェーズのみ注釈）</title>
+  <meta charset="UTF-8" />
+  <title>Session ${sessionId} リアルタイム心拍グラフ</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.1.0"></script>
   <style>
     body { font-family: Arial; padding: 20px; }
-    #grid { display: grid; grid-template-columns: repeat(2,1fr); gap:16px; }
+    #grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
     .card { border:1px solid #ccc; border-radius:8px; padding:12px; }
     .card h3 { margin:0 0 8px; font-size:16px; text-align:center; }
   </style>
 </head>
 <body>
-  <h2>Session ${sessionId} の分割グラフ</h2>
-  <button onclick="location.href='/graph'" style="margin-bottom:16px">← 戻る</button>
+  <h2>Session ${sessionId} のリアルタイム心拍</h2>
+  <button onclick="location.href='/graph'" style="margin-bottom:16px">← グラフ選択に戻る</button>
   <div id="grid"></div>
 
   <script>
@@ -1035,20 +1033,45 @@ app.get("/graph/session/:sessionId", async (c) => {
     const phaseLogs = ${JSON.stringify(phaseLogs)};
     const grid      = document.getElementById("grid");
     const charts    = {};
-    const N = 10;
-    const OFFSET = 5;
+    const N = 10;            // 最新 N サンプル平均
+    const OFFSET = 5;        // 閾値 = 基準 + OFFSET
 
-    // プラグイン登録（省略、前回同様のものを使ってください）
+    // プラグイン登録
+    const thresholdBgPlugin = {
+      id: 'thresholdBg',
+      afterDraw(chart, args, options) {
+        const { ctx, chartArea:{top,bottom}, scales:{x} } = chart;
+        const threshold = options.threshold;
+        const maxDelta  = options.maxDelta;
+        const data      = chart.data.datasets[0].data;
+        let startIdx = null;
+        data.forEach((pt,i) => {
+          if (pt.y > threshold && startIdx === null) {
+            startIdx = i;
+          }
+          if ((pt.y <= threshold || i === data.length-1) && startIdx !== null) {
+            const endIdx = (pt.y>threshold && i===data.length-1)? i : i-1;
+            const delta = data[startIdx].y - threshold;
+            const alpha = Math.min(delta / maxDelta, 1) * 0.5;
+            const x0 = x.getPixelForValue(data[startIdx].x);
+            const x1 = x.getPixelForValue(data[endIdx].x);
+            ctx.save();
+            ctx.fillStyle = \`rgba(255,0,0,\${alpha})\`;
+            ctx.fillRect(x0, top, x1 - x0, bottom - top);
+            ctx.restore();
+            startIdx = null;
+          }
+        });
+      }
+    };
+    Chart.register(thresholdBgPlugin);
 
     async function fetchAndRender() {
-      // ■ annotationConfig: 初めのフェーズと現在の（最後の）フェーズのみ
+      // 1) annotationConfig
       const annotationConfig = {};
-      const toAnnotate = [];
-      if (phaseLogs.length > 0) toAnnotate.push(phaseLogs[0]);
-      if (phaseLogs.length > 1) toAnnotate.push(phaseLogs[phaseLogs.length - 1]);
-      toAnnotate.forEach((log, idx) => {
+      phaseLogs.forEach((log, idx) => {
         if (!log.endTime) return;
-        annotationConfig['line' + idx] = {
+        annotationConfig['line'+idx] = {
           type: 'line',
           xMin: new Date(log.endTime),
           xMax: new Date(log.endTime),
@@ -1064,45 +1087,58 @@ app.get("/graph/session/:sessionId", async (c) => {
         };
       });
 
-      // データ取得・グループ化は前回と同じ
-      const sessionStart = phaseLogs.length ? phaseLogs[0].startTime : new Date().toISOString();
+      // 2) ギャップ除外の境界取得
+      const firstEnd = phaseLogs[0]?.endTime ? new Date(phaseLogs[0].endTime).getTime() : null;
+      const currentPhase = phaseLogs.find(pl => pl.endTime === null);
+      const currStart = currentPhase ? new Date(currentPhase.startTime).getTime() : null;
+
+      // 3) データ取得
+      const sessionStart = phaseLogs[0]?.startTime || new Date().toISOString();
       const nowISO = new Date().toISOString();
       const res = await fetch(\`/api/heartrate?sessionId=\${sessionId}&from=\${encodeURIComponent(sessionStart)}&to=\${encodeURIComponent(nowISO)}\`);
       if (!res.ok) return;
       const { data } = await res.json();
 
-      const groups: Record<number, {x:Date,y:number}[]> = {};
+      // 4) グループ化＋ギャップ除外フィルタ
+      const groups = {};
       data.forEach(pt => {
+        const t = new Date(pt.Timestamp).getTime();
+        if (firstEnd !== null && currStart !== null && t > firstEnd && t < currStart) {
+          // 1フェーズ終了～現フェーズ開始前は除外
+          return;
+        }
         if (!groups[pt.id]) groups[pt.id] = [];
         groups[pt.id].push({ x: new Date(pt.Timestamp), y: pt.Heart_Rate });
       });
 
-      // stats 作成は前回同様
+      // 5) 各IDごと stats
       const stats = Object.entries(groups).map(([idStr, arr]) => {
         const id = +idStr;
         const recent = arr.slice(-N);
-        const sum = recent.reduce((a,p) => a + p.y, 0);
+        const sum = recent.reduce((a,p)=>a+p.y,0);
         const currentAvg = recent.length ? sum / recent.length : 0;
-        const base = baseline[id] || 0;
+        const base = baseline[id]||0;
         const threshold = base + OFFSET;
-        const deltas = recent.map(p => p.y - threshold).filter(d => d > 0);
+        const deltas = recent.map(p=>p.y-threshold).filter(d=>d>0);
         const maxDelta = deltas.length ? Math.max(...deltas) : 1;
         const header = \`\${nameMap[id]||'ID:'+id} — 基準:\${base.toFixed(1)} BPM 今(\${N}件):\${currentAvg.toFixed(1)} BPM\`;
         return { id, arr, header, threshold, maxDelta };
       });
-      stats.sort((a,b) => b.maxDelta - a.maxDelta);
 
-      // チャート破棄・再利用も同じ
-      const currentIds = stats.map(s => s.id);
-      Object.keys(charts).map(i => +i).forEach(id => {
-        if (!currentIds.includes(id)) {
+      // 差順ソート
+      stats.sort((a,b)=>b.maxDelta - a.maxDelta);
+
+      // 6) 不要チャート破棄
+      const ids = stats.map(s=>s.id);
+      Object.keys(charts).map(i=>+i).forEach(id => {
+        if (!ids.includes(id)) {
           charts[id].destroy();
           delete charts[id];
           document.getElementById("card-"+id)?.remove();
         }
       });
 
-      // 作成 or 更新
+      // 7) カード＆チャート生成 or 更新
       stats.forEach(stat => {
         const { id, arr, header, threshold, maxDelta } = stat;
         let card = document.getElementById("card-"+id);
@@ -1121,17 +1157,17 @@ app.get("/graph/session/:sessionId", async (c) => {
         const ctx = document.getElementById("chart-"+id).getContext("2d");
         if (!charts[id]) {
           charts[id] = new Chart(ctx, {
-            type: 'line',
-            data: { datasets: [{ label: header, data: arr, fill: false, borderColor: \`hsl(\${(id*137)%360},100%,50%)\`, spanGaps: true }]},
-            options: {
-              responsive: true,
-              plugins: {
-                annotation: { annotations: annotationConfig },
+            type:'line',
+            data:{ datasets:[{ label:header, data:arr, fill:false, borderColor:\`hsl(\${(id*137)%360},100%,50%)\`, spanGaps:true }]},
+            options:{
+              responsive:true,
+              plugins:{
+                annotation: { annotations:annotationConfig },
                 thresholdBg: { threshold, maxDelta }
               },
-              scales: {
-                x: { type: 'time', time: { unit: 'minute' }, title: { display: true, text: 'Time'} },
-                y: { title: { display: true, text: 'BPM'} }
+              scales:{
+                x:{ type:'time', time:{unit:'minute'}, title:{display:true,text:'Time'} },
+                y:{ title:{display:true,text:'BPM'} }
               }
             }
           });
@@ -1154,8 +1190,7 @@ app.get("/graph/session/:sessionId", async (c) => {
 </body>
 </html>
   `);
-});
-
+});*/
 app.get("/graph/session/face/:sessionId", async (c) => {
   const sidParam = c.req.param("sessionId");
   const sessionId = parseInt(sidParam, 10);
@@ -1296,13 +1331,6 @@ app.get("/graph/session/division/:sessionId", async (c) => {
   const baseline: Record<number, number> = {};
   summaries.forEach(s => baseline[s.sensorId] = s.avgHeartRate);
 
-  // フェーズログ取得（annotation 用）
-  const phaseLogs = await prisma.phaseLog.findMany({
-    where: { sessionId },
-    orderBy: { startTime: "asc" },
-    select: { gameDate: true, gamePhase: true, startTime: true, endTime: true }
-  });
-
   return c.html(`
 <!DOCTYPE html>
 <html lang="ja">
@@ -1313,10 +1341,10 @@ app.get("/graph/session/division/:sessionId", async (c) => {
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.1.0"></script>
   <style>
-    body { font-family: Arial; padding: 20px; }
-    #grid { display: grid; grid-template-columns: repeat(2,1fr); gap:16px; }
-    .card { border:1px solid #ccc; border-radius:8px; padding:12px; }
-    .card h3 { margin:0 0 8px; font-size:16px; text-align:center; }
+    body{font-family:Arial;padding:20px}
+    #grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+    .card{border:1px solid #ccc;border-radius:8px;padding:12px}
+    .card h3{margin:0 0 8px;font-size:16px;text-align:center}
   </style>
 </head>
 <body>
@@ -1329,34 +1357,33 @@ app.get("/graph/session/division/:sessionId", async (c) => {
     const sessionId = ${sessionId};
     const nameMap   = ${JSON.stringify(nameMap)};
     const baseline  = ${JSON.stringify(baseline)};
-    const phaseLogs = ${JSON.stringify(phaseLogs)};
     const grid      = document.getElementById("grid");
     const charts    = {};
-    const N = 10;                // 最新Nサンプル平均
-    const OFFSET = 5;            // 基準＋OFFSETを閾値に
+    const N = 10;     // 最新Nサンプル平均
+    const OFFSET = 15; // 基準＋OFFSETを閾値に
 
-    // ■ プラグイン定義
+    // プラグイン定義
     const thresholdBgPlugin = {
       id: 'thresholdBg',
       afterDraw: (chart, args, options) => {
-        const { ctx, chartArea: { top, bottom }, scales: { x } } = chart;
+        const { ctx, chartArea:{top,bottom}, scales:{x} } = chart;
         const threshold = options.threshold;
         const maxDelta  = options.maxDelta;
-        const data      = chart.data.datasets[0].data;
+        const data = chart.data.datasets[0].data;
         let startIdx = null;
-        data.forEach((pt, i) => {
+        data.forEach((pt,i) => {
           if (pt.y > threshold && startIdx === null) {
             startIdx = i;
           }
-          if ((pt.y <= threshold || i === data.length - 1) && startIdx !== null) {
-            const endIdx = (pt.y > threshold && i === data.length - 1) ? i : i - 1;
-            const deltaAtStart = data[startIdx].y - threshold;
-            const alpha = Math.min(deltaAtStart / maxDelta, 1) * 0.5;
-            const xStart = x.getPixelForValue(data[startIdx].x);
-            const xEnd   = x.getPixelForValue(data[endIdx].x);
+          if ((pt.y <= threshold || i === data.length-1) && startIdx !== null) {
+            const endIdx = (pt.y>threshold && i===data.length-1)? i : i-1;
+            const delta = data[startIdx].y - threshold;
+            const alpha = Math.min(delta / maxDelta, 1) * 0.5;
+            const x0 = x.getPixelForValue(data[startIdx].x);
+            const x1 = x.getPixelForValue(data[endIdx].x);
             ctx.save();
             ctx.fillStyle = \`rgba(255,0,0,\${alpha})\`;
-            ctx.fillRect(xStart, top, xEnd - xStart, bottom - top);
+            ctx.fillRect(x0, top, x1-x0, bottom-top);
             ctx.restore();
             startIdx = null;
           }
@@ -1365,28 +1392,30 @@ app.get("/graph/session/division/:sessionId", async (c) => {
     };
     Chart.register(thresholdBgPlugin);
 
-    async function fetchAndRender() {
-      // ■ annotationConfig 作成
+    async function fetchAndRender(){
+      // ⇒ **毎回フェーズログを再取得**
+      const resPL = await fetch(\`/api/phaseLog?sessionId=\${sessionId}\`);
+      const phaseLogs = resPL.ok ? await resPL.json() : [];
+
+      // annotationConfig 作成
       const annotationConfig = {};
-      phaseLogs.forEach((log, idx) => {
+      phaseLogs.forEach((log,idx)=>{
         if (!log.endTime) return;
         annotationConfig['line'+idx] = {
-          type: 'line',
-          xMin: new Date(log.endTime),
-          xMax: new Date(log.endTime),
-          borderColor: 'rgba(255,99,132,0.8)',
-          borderWidth: 2,
-          label: {
-            content: \`\${log.gameDate}\${log.gamePhase} 終了\`,
-            enabled: true,
-            position: 'start',
-            backgroundColor: 'rgba(255,99,132,0.2)',
-            color: '#000'
+          type:'line',
+          xMin:new Date(log.endTime),
+          xMax:new Date(log.endTime),
+          borderColor:'rgba(255,99,132,0.8)',
+          borderWidth:2,
+          label:{
+            content: log.gameDate + log.gamePhase + ' 終了',
+            enabled:true,position:'start',
+            backgroundColor:'rgba(255,99,132,0.2)',color:'#000'
           }
         };
       });
 
-      // ■ データ取得: sessionStart～now
+      // データ取得: sessionStart～now
       const sessionStart = phaseLogs.length
         ? phaseLogs[0].startTime
         : new Date().toISOString();
@@ -1395,32 +1424,32 @@ app.get("/graph/session/division/:sessionId", async (c) => {
       if (!res.ok) return;
       const { data } = await res.json();
 
-      // ■ ID毎にグループ化
+      // ID毎にグループ化
       const groups = {};
-      data.forEach(pt => {
+      data.forEach(pt=>{
         if (!groups[pt.id]) groups[pt.id] = [];
-        groups[pt.id].push({ x: new Date(pt.Timestamp), y: pt.Heart_Rate });
+        groups[pt.id].push({ x:new Date(pt.Timestamp), y:pt.Heart_Rate });
       });
 
-      // ■ stats 配列生成
-      const stats = Object.entries(groups).map(([idStr, arr]) => {
-        const id = parseInt(idStr, 10);
+      // stats 配列生成
+      const stats = Object.entries(groups).map(([idStr,arr])=>{
+        const id = parseInt(idStr,10);
         const recent = arr.slice(-N);
-        const sum = recent.reduce((a,p) => a + p.y, 0);
-        const currentAvg = recent.length ? sum / recent.length : 0;
-        const base = baseline[id] || 0;
+        const sum = recent.reduce((a,p)=>a+p.y,0);
+        const currentAvg = recent.length? sum/recent.length: 0;
+        const base = baseline[id]||0;
         const threshold = base + OFFSET;
-        const deltas = recent.map(p => p.y - threshold).filter(d => d > 0);
-        const maxDelta = deltas.length ? Math.max(...deltas) : 1;
+        const deltas = recent.map(p=>p.y-threshold).filter(d=>d>0);
+        const maxDelta = deltas.length? Math.max(...deltas) : 1;
         const header = \`\${nameMap[id]||'ID:'+id} — 基準:\${base.toFixed(1)} BPM 今(\${N}件):\${currentAvg.toFixed(1)} BPM\`;
         return { id, arr, header, threshold, maxDelta };
       });
       // 差分順ソート
-      stats.sort((a, b) => b.maxDelta - a.maxDelta);
+      stats.sort((a,b)=>b.maxDelta - a.maxDelta);
 
-      // ■ 不要チャート破棄
-      const currentIds = stats.map(s => s.id);
-      Object.keys(charts).map(i => +i).forEach(id => {
+      // 不要チャート破棄
+      const currentIds = stats.map(s=>s.id);
+      Object.keys(charts).map(i=>+i).forEach(id=>{
         if (!currentIds.includes(id)) {
           charts[id].destroy();
           delete charts[id];
@@ -1428,9 +1457,9 @@ app.get("/graph/session/division/:sessionId", async (c) => {
         }
       });
 
-      // ■ カード＆チャート生成 or 更新
-      stats.forEach(stat => {
-        const { id, arr, header, threshold, maxDelta } = stat;
+      // カード＆チャート生成 or 更新
+      stats.forEach(stat=>{
+        const {id,arr,header,threshold,maxDelta} = stat;
         let card = document.getElementById("card-"+id);
         if (!card) {
           card = document.createElement("div");
@@ -1447,17 +1476,17 @@ app.get("/graph/session/division/:sessionId", async (c) => {
         const ctx = document.getElementById("chart-"+id).getContext("2d");
         if (!charts[id]) {
           charts[id] = new Chart(ctx, {
-            type: 'line',
-            data: { datasets: [{ label: header, data: arr, fill: false, borderColor: \`hsl(\${(id*137)%360},100%,50%)\`, spanGaps: true }]},
-            options: {
-              responsive: true,
-              plugins: {
-                annotation: { annotations: annotationConfig },
-                thresholdBg: { threshold, maxDelta }
+            type:'line',
+            data:{ datasets:[{ label:header, data:arr, fill:false, borderColor:\`hsl(\${(id*137)%360},100%,50%)\`, spanGaps:true }]},
+            options:{
+              responsive:true,
+              plugins:{
+                annotation:{ annotations:annotationConfig },
+                thresholdBg:{ threshold, maxDelta }
               },
-              scales: {
-                x: { type: 'time', time: { unit: 'minute' }, title: { display: true, text: 'Time' } },
-                y: { title: { display: true, text: 'BPM' } }
+              scales:{
+                x:{ type:'time', time:{unit:'minute'}, title:{display:true,text:'Time'} },
+                y:{ title:{display:true,text:'BPM'} }
               }
             }
           });
@@ -1474,13 +1503,14 @@ app.get("/graph/session/division/:sessionId", async (c) => {
     }
 
     await fetchAndRender();
-    setInterval(fetchAndRender, 5000);
+    setInterval(fetchAndRender, 1000);
   })();
   </script>
 </body>
 </html>
   `);
 });
+
 
 
 //api設計
