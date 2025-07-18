@@ -35,9 +35,14 @@ import { WebSocketServer, WebSocket } from "ws";
 import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { networkInterfaces } from "os";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, "../.env") });
 const HEART_RATE_THRESHOLD = 120;
 
 const app = new Hono();
@@ -56,7 +61,7 @@ let currentGame = "人狼";
 let currentDay = 1;
 let currentPhaseIndex = 0;
 let canGoBack = true;
-const gameConfigs = JSON.parse(fs.readFileSync("/Users/k22002/AndroidStudioProjects/test1/api-test2/src/game_config.json", "utf-8"));
+const gameConfigs = JSON.parse(fs.readFileSync(path.join(__dirname, "game_config.json"), "utf-8"));
 let currentConfig = gameConfigs.find((g: { game: string; }) => g.game === currentGame);
 if (!currentConfig) {
   throw new Error("指定されたゲーム設定が見つかりません");
