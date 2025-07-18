@@ -38,6 +38,16 @@ model PhaseLog {
   game      String
   sessionId Int       @default(1)
 }
+
+model PhaseSummary {
+  id            Int      @id @default(autoincrement())
+  sessionId     Int
+  sensorId      Int
+  gameDate      String
+  gamePhase     String
+  avgHeartRate  Float
+  createdAt     DateTime @default(now())
+}
 model Participant {
   sessionId Int
   sensorId  Int
