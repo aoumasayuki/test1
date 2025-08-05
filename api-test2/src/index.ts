@@ -598,8 +598,26 @@ app.get("/graph", async (c) => {
   <label>セッションID:</label>
   <select id="sessionSelectface">${sessionOptions}</select>
   <button id="btnSessionface">表示</button>
-  <script>
   
+  <h2>now</h2>
+  <label>セッションID:</label>
+  <select id="sessionSelectnow">${sessionOptions}</select>
+  <button id="btnSessionnow">表示</button>
+  
+  <h2>idnow</h2>
+  <label>ID:</label>
+  <select id="dateIdSelectselectid">${idOptions}</select>
+  <label>セッションID:</label>
+  <select id="sessionSelectselectid">${sessionOptions}</select>
+  <button id="btnSessionselectid">表示</button>
+    
+  <h2>test</h2>
+  <label>ID:</label>
+  <select id="dateIdSelecttest">${idOptions}</select>
+  <label>セッションID:</label>
+  <select id="sessionSelecttest">${sessionOptions}</select>
+  <button id="btnSessiontest">表示</button>
+  <script>
     // フェーズ表示ボタン
     document.getElementById("btnPhase").onclick = () => {
       const phaseEl   = document.getElementById("phaseSelect");
@@ -631,6 +649,22 @@ app.get("/graph", async (c) => {
     document.getElementById("btnSessionface").onclick = () => {
       const sessionId = document.getElementById("sessionSelectface").value;
       location.href = \`/graph/session/face/\${sessionId}\`;
+    };
+    //now
+    document.getElementById("btnSessionnow").onclick = () => {
+      const sessionId = document.getElementById("sessionSelectnow").value;
+      location.href = \`/graph/session/now/\${sessionId}\`;
+    };
+    //selectid
+    document.getElementById("btnSessionselectid").onclick = () => {
+      const id       = document.getElementById("dateIdSelectselectid").value;
+      const sessionId = document.getElementById("sessionSelectselectid").value;
+      location.href = \`/graph/session/selectid/\${sessionId}?id=\${id}\`;
+    };
+    //test
+    document.getElementById("btnSessiontest").onclick = () => {
+      const sessionId = document.getElementById("sessionSelecttest").value;
+      location.href = \`/graph/session/test/\${sessionId}\`;
     };
   </script>
 
@@ -834,143 +868,142 @@ app.get("/graph/date/:day", async (c) => {
 </html>
   `);
 });
-// app.get("/graph/session/:sessionId", async (c) => {
-//   const sidParam = c.req.param("sessionId");
-//   const sessionId = parseInt(sidParam, 10);
-//   if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
+app.get("/graph/session/:sessionId", async (c) => {
+  const sidParam = c.req.param("sessionId");
+  const sessionId = parseInt(sidParam, 10);
+  if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
 
-//   // 名前マップ取得
-//   const parts = await prisma.participant.findMany({
-//     where: { sessionId },
-//     select: { sensorId: true, name: true }
-//   });
-//   const nameMap: Record<number,string> = {};
-//   parts.forEach(p => { nameMap[p.sensorId] = p.name; });
+  // フェーズ終了時刻を取得
+  const phaseLogs = await prisma.phaseLog.findMany({
+    where: { sessionId, endTime: { not: null } },
+    orderBy: { startTime: "asc" },
+    select: { gameDate: true, gamePhase: true, endTime: true }
+  });
+  const annotations = phaseLogs.map((log, idx) => ({
+    key: `line${idx}`,
+    time: log.endTime!.toISOString(),
+    label: `${log.gameDate}${log.gamePhase} 終了`
+  }));
 
-//   // 第1フェーズ平均を取得
-//   const sums = await prisma.phaseSummary.findMany({
-//     where: { sessionId }
-//   });
-//   const summaryMap: Record<number,number> = {};
-//   sums.forEach(s => { summaryMap[s.sensorId] = s.avgHeartRate; });
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Session ${sessionId} Live Graph</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.1.0"></script>
+</head>
+<body>
+  <h2>Session ${sessionId} のリアルタイム心拍数</h2>
+    <div style="margin-bottom:16px;">
+    <button onclick="location.href='/graph'" style="padding:8px 16px;font-size:14px;">
+      ← グラフ選択に戻る
+    </button>
+  </div>
+  <canvas id="liveChart" width="800" height="400"></canvas>
+  <script>
+  (async function(){
+    const sessionId = ${sessionId};
+    const ctx = document.getElementById("liveChart").getContext("2d");
+    let chart = null;
 
-//   return c.html(`
-// <!DOCTYPE html>
-// <html lang="ja">
-// <head>
-//   <meta charset="UTF-8">
-//   <title>Session ${sessionId} 平均併記ソートグラフ</title>
-//   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-//   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-//   <style>
-//     body { font-family: Arial, sans-serif; padding: 20px; }
-//     #grid { display: grid; grid-template-columns: repeat(2,1fr); gap:16px; }
-//     .card { border:1px solid #ccc; border-radius:8px; padding:12px; }
-//     .card h3 { margin:0 0 8px; text-align:center; }
-//   </style>
-// </head>
-// <body>
-//   <h2>Session ${sessionId} のグラフ (平均表示付き、差分ソート)</h2>
-//   <button onclick="location.href='/graph'">← 戻る</button>
-//   <div id="grid"></div>
+    // annotation のベース設定
+    const phaseAnnotations = ${JSON.stringify(annotations)};
+    const baseAnnotations = phaseAnnotations.reduce((a, log) => {
+      a[log.key] = {
+        type: 'line',
+        xMin: new Date(log.time),
+        xMax: new Date(log.time),
+        borderColor: 'rgba(255,99,132,0.8)',
+        borderWidth: 2,
+        label: {
+          content: log.label,
+          enabled: true,
+          position: 'start',
+          backgroundColor: 'rgba(255,99,132,0.2)',
+          color: '#000'
+        }
+      };
+      return a;
+    }, {});
 
-//   <script>
-//   (async () => {
-//     const sessionId  = ${sessionId};
-//     const nameMap    = ${JSON.stringify(nameMap)};
-//     const summaryMap = ${JSON.stringify(summaryMap)};
-//     const grid       = document.getElementById("grid");
-//     const charts = {};  // ← 型注釈削除
+    async function fetchData(){
+      // 1) 参加者取得
+      const resP = await fetch(\`/api/participants?sessionId=\${sessionId}\`);
+      const parts = resP.ok ? await resP.json() : [];
+      const nameMap = {};
+      parts.forEach(p=> nameMap[p.sensorId] = p.name);
 
-//     async function fetchAndRender() {
-//       // 最新心拍データ
-//       const resH = await fetch(\`/api/heartrate?sessionId=\${sessionId}\`);
-//       if (!resH.ok) return;
-//       const { data } = await resH.json();
+      // 2) 心拍データ取得
+      const resH = await fetch(\`/api/heartrate?sessionId=\${sessionId}\`);
+      if (!resH.ok) return;
+      const { data } = await resH.json();
 
-//       // IDごとグループ化 & 最新値取得
-//       const groups = {};
-//       const latest = {};
+      // 3) 非表示状態を保存
+      const prevHidden = {};
+      if (chart) {
+        chart.data.datasets.forEach((ds,i) => {
+          prevHidden[ds.label] = chart.getDatasetMeta(i).hidden;
 
-//       data.forEach(pt => {
-//         if (!groups[pt.id]) groups[pt.id] = [];
-//         groups[pt.id].push({ x: new Date(pt.Timestamp), y: pt.Heart_Rate });
-//         latest[pt.id] = pt.Heart_Rate;
-//       });
-//       let sensorIds = Object.keys(groups).map(id=>parseInt(id,10));
+        });
+      }
 
-//       // 差分でソート
-//       sensorIds.sort((a,b) => {
-//         const avgA = summaryMap[a] ?? 0;
-//         const avgB = summaryMap[b] ?? 0;
-//         const curA = latest[a] ?? avgA;
-//         const curB = latest[b] ?? avgB;
-//         return Math.abs(curB - avgB) - Math.abs(curA - avgA);
-//       });
+      // 4) データセット構築
+      const groups = {};
+      data.forEach(pt => {
+        if (!groups[pt.id]) groups[pt.id] = [];
+        groups[pt.id].push({ x: new Date(pt.Timestamp), y: pt.Heart_Rate });
+      });
+      const datasets = Object.entries(groups).map(([id, arr]) => {
+        const label = nameMap[id] ? \`\${nameMap[id]} (ID:\${id})\` : \`ID:\${id}\`;
+        return {
+          label,
+          data: arr,
+          fill: false,
+          borderColor: \`hsl(\${(id*137)%360},100%,50%)\`,
+          spanGaps: true,
+          pointRadius: 0
+        };
+      });
 
-//       // 存在しないIDのチャート消去
-//       Object.keys(charts).map(id=>parseInt(id,10)).forEach(id => {
-//         if (!sensorIds.includes(id)) {
-//           charts[id].destroy();
-//           delete charts[id];
-//           const el = document.getElementById("card-"+id);
-//           if (el) el.remove();
-//         }
-//       });
+      // 5) 初回／更新
+      if (!chart) {
+        chart = new Chart(ctx, {
+          type: 'line',
+          data: { datasets },
+          options: {
+            responsive: true,
+            plugins: { annotation: { annotations: baseAnnotations } },
+            scales: {
+              x: { type:'time', time:{ unit:'minute' }, title:{ display:true, text:'Time' } },
+              y: { title:{ display:true, text:'BPM' } }
+            }
+          }
+        });
+      } else {
+        chart.data.datasets = datasets;
+        // 6) 保存しておいた非表示フラグを復元
+        chart.data.datasets.forEach((ds, i) => {
+          const key = ds.label;
+          if (prevHidden.hasOwnProperty(key)) {
+            chart.getDatasetMeta(i).hidden = prevHidden[key];
+          }
+        });
+        chart.update();
+      }
+    }
 
-//       // 各IDのカード&チャート生成／更新
-//       sensorIds.forEach(id => {
-//         const arr = groups[id] || [];
-//         const avg = summaryMap[id] !== undefined
-//                   ? summaryMap[id].toFixed(1) + " BPM"
-//                   : "–";
-//         const label = nameMap[id]
-//           ? \`\${nameMap[id]} (ID:\${id}, 平均:\${avg})\`
-//           : \`ID:\${id} (平均:\${avg})\`;
+    fetchData();
+    setInterval(fetchData, 5000);
+  })();
+  </script>
+</body>
+</html>
+  `);
+});
 
-//         if (!charts[id]) {
-//           const card = document.createElement("div");
-//           card.className = "card";
-//           card.id = "card-"+id;
-//           card.innerHTML = \`
-//             <h3>\${label}</h3>
-//             <canvas id="chart-\${id}" width="400" height="200"></canvas>
-//           \`;
-//           grid.appendChild(card);
-
-//           const ctx = document.getElementById("chart-"+id).getContext("2d");
-//           charts[id] = new Chart(ctx, {
-//             type: 'line',
-//             data: { datasets: [{
-//               label, data: arr, fill: false,
-//               borderColor: \`hsl(\${(id*137)%360},100%,50%)\`,
-//               spanGaps: true
-//             }]},
-//             options: {
-//               responsive: true,
-//               scales: {
-//                 x:{ type:'time', time:{unit:'minute'}, title:{display:true,text:'Time'}},
-//                 y:{ title:{display:true,text:'BPM'} }
-//               }
-//             }
-//           });
-//         } else {
-//           const chart = charts[id];
-//           chart.data.datasets[0].data  = arr;
-//           chart.data.datasets[0].label = label;
-//           chart.update();
-//         }
-//       });
-//     }
-
-//     await fetchAndRender();
-//     setInterval(fetchAndRender, 5000);
-//   })();
-//   </script>
-// </body>
-// </html>
-//   `);
-// });
 /*app.get("/graph/session/:sessionId", async (c) => {
   const sidParam = c.req.param("sessionId");
   const sessionId = parseInt(sidParam, 10);
@@ -1234,7 +1267,7 @@ app.get("/graph/session/face/:sessionId", async (c) => {
   </style>
 </head>
 <body>
-  <h2>Session ${sessionId} の分割評価（差〜2:😃,2〜5:🙂,5〜10:😐,10〜15:☹️,15〜:😡）</h2>
+  <h2>Session ${sessionId} の分割評価（差〜2:🟦,2〜5:🟩,5〜10:🟨,10〜15:🟧,15〜:🟥）</h2>
   <button onclick="location.href='/graph'" style="margin-bottom:16px">← 戻る</button>
   <div id="grid"></div>
 
@@ -1248,11 +1281,11 @@ app.get("/graph/session/face/:sessionId", async (c) => {
     const N         = 10; // 最新Nサンプルを平均
 
     function getFaceByDiff(diff) {
-      if (diff <= 2)   return "😃";
-      if (diff <= 5)   return "🙂";
-      if (diff <= 10)  return "😐";
-      if (diff <= 15)  return "☹️";
-      return "😡";
+      if (diff <= 2)   return "🟦";
+      if (diff <= 5)   return "🟩";
+      if (diff <= 10)  return "🟨";
+      if (diff <= 15)  return "🟧";
+      return "🟥";
     }
 
     async function fetchAndRender() {
@@ -1283,7 +1316,7 @@ app.get("/graph/session/face/:sessionId", async (c) => {
         const diff = currentAvg - base;
         const face = getFaceByDiff(diff);
         const name = nameMap[id] || "ID:" + id;
-        return { id, name, face, diff };
+        return { id, name, face, diff, avg:currentAvg };
       });
 
       // ソート
@@ -1297,13 +1330,15 @@ app.get("/graph/session/face/:sessionId", async (c) => {
         // ID/名前表示と顔文字を連結文字列で組み立て
         card.innerHTML =
           '<div class="title">' + item.name + '</div>' +
-          '<div class="face">' + item.face + '</div>';
+          '<div class="face">' + item.face + '</div>' +
+          '<div>' + item.avg.toFixed(1) + ' BPM</div>';
+
         grid.appendChild(card);
       });
     }
 
     await fetchAndRender();
-    setInterval(fetchAndRender, 5000);
+    setInterval(fetchAndRender, 1000);
   })();
   </script>
 </body>
@@ -1408,7 +1443,7 @@ app.get("/graph/session/division/:sessionId", async (c) => {
           borderColor:'rgba(255,99,132,0.8)',
           borderWidth:2,
           label:{
-            content: log.gameDate + log.gamePhase + ' 終了',
+            content: log.gamePhase ,
             enabled:true,position:'start',
             backgroundColor:'rgba(255,99,132,0.2)',color:'#000'
           }
@@ -1445,7 +1480,7 @@ app.get("/graph/session/division/:sessionId", async (c) => {
         return { id, arr, header, threshold, maxDelta };
       });
       // 差分順ソート
-      stats.sort((a,b)=>b.maxDelta - a.maxDelta);
+      //stats.sort((a,b)=>b.maxDelta - a.maxDelta);
 
       // 不要チャート破棄
       const currentIds = stats.map(s=>s.id);
@@ -1484,6 +1519,9 @@ app.get("/graph/session/division/:sessionId", async (c) => {
                 annotation:{ annotations:annotationConfig },
                 thresholdBg:{ threshold, maxDelta }
               },
+              elements: {
+                point: { radius: 0 }  // ← ★ ここで点をなくす
+              },
               scales:{
                 x:{ type:'time', time:{unit:'minute'}, title:{display:true,text:'Time'} },
                 y:{ title:{display:true,text:'BPM'} }
@@ -1506,6 +1544,501 @@ app.get("/graph/session/division/:sessionId", async (c) => {
     setInterval(fetchAndRender, 1000);
   })();
   </script>
+</body>
+</html>
+  `);
+});
+app.get("/graph/session/now/:sessionId", async (c) => {
+  const sidParam = c.req.param("sessionId");
+  const sessionId = parseInt(sidParam, 10);
+  if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
+
+  const parts = await prisma.participant.findMany({
+    where: { sessionId },
+    select: { sensorId: true, name: true }
+  });
+  const nameMap: Record<number, string> = {};
+  parts.forEach(p => nameMap[p.sensorId] = p.name);
+
+  const summaries = await prisma.phaseSummary.findMany({
+    where: { sessionId },
+    select: { sensorId: true, avgHeartRate: true }
+  });
+  const baseline: Record<number, number> = {};
+  summaries.forEach(s => baseline[s.sensorId] = s.avgHeartRate);
+
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Session ${sessionId} フェーズ分離グラフ</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    #grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .card { border: 1px solid #ccc; border-radius: 8px; padding: 12px; }
+    .card h3 { margin: 0 0 8px; font-size: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h2>Session ${sessionId} フェーズ分離グラフ</h2>
+  <button onclick="location.href='/graph'" style="margin-bottom:16px">← 戻る</button>
+  <div id="grid"></div>
+
+  <script>
+(async function(){
+  const sessionId = ${sessionId};
+  const nameMap = ${JSON.stringify(nameMap)};
+  const baseline = ${JSON.stringify(baseline)};
+  const N = 10, OFFSET = 15;
+  const grid = document.getElementById("grid");
+  const charts = {};
+
+  async function fetchAndRender() {
+    const resPL = await fetch(\`/api/phaseLog?sessionId=\${sessionId}\`);
+    const phaseLogs = resPL.ok ? await resPL.json() : [];
+    const now = new Date();
+
+    const firstPhase = phaseLogs[0];
+    const pastPhases = phaseLogs.filter(log => new Date(log.startTime) <= now);
+    const latestPhase = pastPhases.reduce((a, b) => new Date(a.startTime) > new Date(b.startTime) ? a : b);
+
+    const fetchRanges = [];
+    if (firstPhase?.startTime) {
+      const firstEnd = firstPhase.endTime || now.toISOString();
+      fetchRanges.push({ from: firstPhase.startTime, to: firstEnd });
+    }
+    if (latestPhase?.startTime) {
+      fetchRanges.push({ from: latestPhase.startTime, to: now.toISOString() });
+    }
+
+    let allData = [];
+    for (const range of fetchRanges) {
+      const res = await fetch(\`/api/heartrate?sessionId=\${sessionId}&from=\${encodeURIComponent(range.from)}&to=\${encodeURIComponent(range.to)}\`);
+      if (!res.ok) continue;
+      const { data } = await res.json();
+      allData.push(data);
+    }
+
+    const phaseDataMap = {};
+    [0, 1].forEach(i => {
+      allData[i].forEach((pt, idx) => {
+        if (!phaseDataMap[pt.id]) phaseDataMap[pt.id] = [[], []];
+        phaseDataMap[pt.id][i].push({
+          x: phaseDataMap[pt.id][i].length,  // インデックスをx軸に
+          y: pt.Heart_Rate
+        });
+      });
+    });
+
+    Object.entries(phaseDataMap).forEach(([idStr, [arr1, arr2]]) => {
+      const id = parseInt(idStr, 10);
+      const recent = arr2.slice(-N);
+      const sum = recent.reduce((a, p) => a + p.y, 0);
+      const currentAvg = recent.length ? sum / recent.length : 0;
+      const base = baseline[id] || 0;
+      const threshold = base + OFFSET;
+      const deltas = recent.map(p => p.y - threshold).filter(d => d > 0);
+      const maxDelta = deltas.length ? Math.max(...deltas) : 1;
+      const header = \`\${nameMap[id] || 'ID:' + id} — 基準:\${base.toFixed(1)} BPM 今(\${N}件):\${currentAvg.toFixed(1)} BPM\`;
+
+      let card = document.getElementById("card-" + id);
+      if (!card) {
+        card = document.createElement("div");
+        card.className = "card";
+        card.id = "card-" + id;
+        card.innerHTML = \`
+          <h3>\${header}</h3>
+          <canvas id="chart-\${id}" width="400" height="200"></canvas>\`;
+        grid.appendChild(card);
+      } else {
+        card.querySelector("h3").textContent = header;
+      }
+
+      const ctx = document.getElementById("chart-" + id).getContext("2d");
+      if (!charts[id]) {
+        charts[id] = new Chart(ctx, {
+          type: 'line',
+          data: {
+            datasets: [
+              // ✅ 横線：1日目朝の平均値
+              {
+                label: '1日目朝 平均',
+                data: arr1.length ? [
+                  { x: 0, y: base },
+                  { x: arr2.length + 2, y: base }  // ← 現在フェーズの右端より右まで引く
+                ] : [],
+                borderColor: 'blue',
+                borderDash: [5, 5], // 破線
+                pointRadius: 0,
+                borderWidth: 2
+              },
+              // ✅ 折れ線：現在フェーズのみ
+              {
+                label: '現在フェーズ',
+                data: arr2,
+                borderColor: 'red',
+                pointRadius: 0,
+                spanGaps: false
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              x: {
+                type: 'linear',
+                display: false
+              },
+              y: {
+                title: { display: true, text: 'BPM' }
+              }
+            }
+          }
+        });
+      } else {
+        const chart = charts[id];
+        chart.data.datasets[0].data = arr1;
+        chart.data.datasets[1].data = arr2;
+        chart.update();
+      }
+    });
+  }
+
+  await fetchAndRender();
+  setInterval(fetchAndRender, 1000);
+})();
+</script>
+</body>
+</html>
+  `);
+});
+app.get("/graph/session/selectid/:sessionId", async (c) => {
+  const sidParam = c.req.param("sessionId");
+  const sessionId = parseInt(sidParam, 10);
+  if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
+
+  // クエリから id を取得
+  const idParam = c.req.query("id");
+  const filterId = idParam !== undefined ? parseInt(idParam, 10) : undefined;
+  if (filterId !== undefined && isNaN(filterId)) return c.text("Invalid id", 400);
+
+  // 参加者取得
+  const parts = await prisma.participant.findMany({
+    where: { sessionId },
+    select: { sensorId: true, name: true }
+  });
+  const nameMap: Record<number,string> = {};
+  parts.forEach(p => nameMap[p.sensorId] = p.name);
+
+  // 平均取得
+  const sums = await prisma.phaseSummary.findMany({
+    where: { sessionId }
+  });
+  const summaryMap: Record<number,number> = {};
+  sums.forEach(s => summaryMap[s.sensorId] = s.avgHeartRate);
+
+  // サーバー側で<option>を組み立て
+  const optionHtml = parts.map(p => {
+    const sel = filterId === p.sensorId ? "selected" : "";
+    return `<option value="${p.sensorId}" ${sel}>${p.name} (ID:${p.sensorId})</option>`;
+  }).join("");
+
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Session ${sessionId} フェーズ分離グラフ</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    #grid { display: grid; grid-template-columns: repeat(1,1fr); gap: 16px; }
+    .card { border:1px solid #ccc; border-radius:8px; padding:12px; }
+    .card h3 { margin:0 0 8px; font-size:16px; text-align:center; }
+  </style>
+</head>
+<body>
+  <h2>Session ${sessionId} の現在フェーズ心拍数</h2>
+  <form onsubmit="event.preventDefault(); location.href='/graph/session/test/${sessionId}?id='+document.getElementById('idSelect').value">
+    <label>Participant:
+      <select id="idSelect">
+        <option value="">— 全員 —</option>
+        ${optionHtml}
+      </select>
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <button onclick="location.href='/graph'" style="margin-bottom:16px">← 戻る</button>
+  <div id="grid"></div>
+
+  <script>
+    // 以降は既存の fetchAndRender ロジックをそのまま…
+    (async () => {
+      const sessionId = ${sessionId};
+      const filterId  = ${filterId ?? "null"};
+  const nameMap   = ${JSON.stringify(nameMap)};
+  const summaryMap= ${JSON.stringify(summaryMap)};
+  const N = 10, OFFSET = 15;
+  const grid = document.getElementById("grid");
+  const charts = {};
+
+  async function fetchAndRender() {
+    const resPL = await fetch(\`/api/phaseLog?sessionId=\${sessionId}\`);
+    const phaseLogs = resPL.ok ? await resPL.json() : [];
+    const now = new Date();
+
+    // フェーズ選別
+    const firstPhase = phaseLogs[0];
+    const pastPhases = phaseLogs.filter(log => new Date(log.startTime) <= now);
+    const latestPhase = pastPhases.reduce((a,b) => new Date(a.startTime)>new Date(b.startTime)?a:b);
+
+    // １日目朝と現在フェーズの範囲設定
+    const ranges = [];
+    if (firstPhase.startTime) {
+      ranges.push({ from: firstPhase.startTime, to: firstPhase.endTime||now.toISOString() });
+    }
+    if (latestPhase.startTime) {
+      ranges.push({ from: latestPhase.startTime, to: now.toISOString() });
+    }
+
+    // データ取得
+    let allData = [];
+    for (const r of ranges) {
+      const url = \`/api/heartrate?sessionId=\${sessionId}&from=\${encodeURIComponent(r.from)}&to=\${encodeURIComponent(r.to)}\${filterId?('&id='+filterId):''}\`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const { data } = await res.json();
+      allData.push(data);
+    }
+
+    // ID 毎に配列を分割
+    const phaseDataMap = {};
+    [0,1].forEach(idx => {
+      (allData[idx]||[]).forEach(pt => {
+        if (filterId && pt.id !== filterId) return;
+        if (!phaseDataMap[pt.id]) phaseDataMap[pt.id] = [[],[]];
+        phaseDataMap[pt.id][idx].push({ x: phaseDataMap[pt.id][idx].length, y: pt.Heart_Rate });
+      });
+    });
+
+    // 描画
+    Object.entries(phaseDataMap).forEach(([idStr, [arr1,arr2]]) => {
+      const id = parseInt(idStr,10);
+      const recent = arr2.slice(-N);
+      const sum = recent.reduce((a,p)=>a+p.y,0);
+      const currentAvg = recent.length? sum/recent.length:0;
+      const base = summaryMap[id]||0;
+      const header = \`\${nameMap[id]||'ID:'+id} — 平均:\${base.toFixed(1)}BPM 今:\${currentAvg.toFixed(1)}BPM\`;
+
+      let card = document.getElementById("card-"+id);
+      if (!card) {
+        card = document.createElement("div");
+        card.className="card";
+        card.id="card-"+id;
+        card.innerHTML=\`
+          <h3>\${header}</h3>
+          <canvas id="chart-\${id}" width="400" height="200"></canvas>\`;
+        grid.appendChild(card);
+      } else {
+        card.querySelector("h3").textContent = header;
+      }
+
+      const ctx = document.getElementById("chart-"+id).getContext("2d");
+      if (!charts[id]) {
+        charts[id] = new Chart(ctx, {
+          type:'line',
+          data:{
+            datasets:[
+              { label:'1日目朝',   data:arr1, borderColor:'blue',  pointRadius:0, spanGaps:false },
+              { label:'現在フェーズ', data:arr2, borderColor:'red',   pointRadius:0, spanGaps:false }
+            ]
+          },
+          options:{
+            responsive:true,
+            scales:{
+              x:{ type:'linear', display:false },
+              y:{ title:{ display:true, text:'BPM' } }
+            }
+          }
+        });
+      } else {
+        const chart = charts[id];
+        chart.data.datasets[0].data = arr1;
+        chart.data.datasets[1].data = arr2;
+        chart.update();
+      }
+    });
+  }
+
+  await fetchAndRender();
+  setInterval(fetchAndRender, 1000);
+})();
+  </script>
+</body>
+</html>
+  `);
+});
+app.get("/graph/session/test/:sessionId", async (c) => {
+  const sidParam = c.req.param("sessionId");
+  const sessionId = parseInt(sidParam, 10);
+  if (isNaN(sessionId)) return c.text("Invalid sessionId", 400);
+
+  const parts = await prisma.participant.findMany({
+    where: { sessionId },
+    select: { sensorId: true, name: true }
+  });
+  const nameMap: Record<number, string> = {};
+  parts.forEach(p => nameMap[p.sensorId] = p.name);
+
+  const summaries = await prisma.phaseSummary.findMany({
+    where: { sessionId },
+    select: { sensorId: true, avgHeartRate: true }
+  });
+  const baseline: Record<number, number> = {};
+  summaries.forEach(s => baseline[s.sensorId] = s.avgHeartRate);
+
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Session ${sessionId} フェーズ分離グラフ</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    #grid { display: grid;   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));  gap: 16px; }
+    .card { border: 1px solid #ccc; border-radius: 8px; padding: 6px; }
+    .card h3 { margin: 0 0 8px; font-size: 8px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h2>Session ${sessionId} フェーズ分離グラフ</h2>
+  <button onclick="location.href='/graph'" style="margin-bottom:16px">← 戻る</button>
+  <div id="grid"></div>
+
+  <script>
+(async function(){
+  const sessionId = ${sessionId};
+  const nameMap = ${JSON.stringify(nameMap)};
+  const baseline = ${JSON.stringify(baseline)};
+  const N = 10, OFFSET = 15;
+  const grid = document.getElementById("grid");
+  const charts = {};
+
+  async function fetchAndRender() {
+    const resPL = await fetch(\`/api/phaseLog?sessionId=\${sessionId}\`);
+    const phaseLogs = resPL.ok ? await resPL.json() : [];
+    const now = new Date();
+
+    const firstPhase = phaseLogs[0];
+    const pastPhases = phaseLogs.filter(log => new Date(log.startTime) <= now);
+    const latestPhase = pastPhases.reduce((a, b) => new Date(a.startTime) > new Date(b.startTime) ? a : b);
+
+    const fetchRanges = [];
+    if (firstPhase?.startTime) {
+      const firstEnd = firstPhase.endTime || now.toISOString();
+      fetchRanges.push({ from: firstPhase.startTime, to: firstEnd });
+    }
+    if (latestPhase?.startTime) {
+      fetchRanges.push({ from: latestPhase.startTime, to: now.toISOString() });
+    }
+
+    let allData = [];
+    for (const range of fetchRanges) {
+      const res = await fetch(\`/api/heartrate?sessionId=\${sessionId}&from=\${encodeURIComponent(range.from)}&to=\${encodeURIComponent(range.to)}\`);
+      if (!res.ok) continue;
+      const { data } = await res.json();
+      allData.push(data);
+    }
+
+    const phaseDataMap = {};
+    [0, 1].forEach(i => {
+      allData[i].forEach((pt, idx) => {
+        if (!phaseDataMap[pt.id]) phaseDataMap[pt.id] = [[], []];
+        phaseDataMap[pt.id][i].push({
+          x: phaseDataMap[pt.id][i].length,  // インデックスをx軸に
+          y: pt.Heart_Rate
+        });
+      });
+    });
+
+    Object.entries(phaseDataMap).forEach(([idStr, [arr1, arr2]]) => {
+      const id = parseInt(idStr, 10);
+      const recent = arr2.slice(-N);
+      const sum = recent.reduce((a, p) => a + p.y, 0);
+      const currentAvg = recent.length ? sum / recent.length : 0;
+      const base = baseline[id] || 0;
+      const threshold = base + OFFSET;
+      const deltas = recent.map(p => p.y - threshold).filter(d => d > 0);
+      const maxDelta = deltas.length ? Math.max(...deltas) : 1;
+      const header = \`\${nameMap[id] || 'ID:' + id} — 基準:\${base.toFixed(1)} BPM 今(\${N}件):\${currentAvg.toFixed(1)} BPM\`;
+
+      let card = document.getElementById("card-" + id);
+      if (!card) {
+        card = document.createElement("div");
+        card.className = "card";
+        card.id = "card-" + id;
+        card.innerHTML = \`
+          <h3>\${header}</h3>
+          <canvas id="chart-\${id}" width="400" height="200"></canvas>\`;
+        grid.appendChild(card);
+      } else {
+        card.querySelector("h3").textContent = header;
+      }
+
+      const ctx = document.getElementById("chart-" + id).getContext("2d");
+      if (!charts[id]) {
+        charts[id] = new Chart(ctx, {
+          type: 'line',
+          data: {
+            datasets: [
+              {
+                label: '1日目朝',
+                data: arr1,
+                borderColor: 'blue',
+                pointRadius: 0,
+                spanGaps: false
+              },
+              {
+                label: '現在フェーズ',
+                data: arr2,
+                borderColor: 'red',
+                pointRadius: 0,
+                spanGaps: false
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              x: {
+                type: 'linear',    // ★ 時間ではなく線形
+                display: false     // ラベルは非表示
+              },
+              y: {
+                title: { display: true, text: 'BPM' }
+              }
+            }
+          }
+        });
+      } else {
+        const chart = charts[id];
+        chart.data.datasets[0].data = arr1;
+        chart.data.datasets[1].data = arr2;
+        chart.update();
+      }
+    });
+  }
+
+  await fetchAndRender();
+  setInterval(fetchAndRender, 1000);
+})();
+</script>
 </body>
 </html>
   `);

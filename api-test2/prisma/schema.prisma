@@ -53,6 +53,7 @@ model Participant {
   sensorId  Int
   name      String
   createdAt DateTime @default(now())
+  isAlive   Boolean  @default(true) // ← 生死判定を追加
 
   @@id([sessionId, sensorId])
   @@index([sensorId])
