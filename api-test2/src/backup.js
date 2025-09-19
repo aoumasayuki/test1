@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // dotenv 読み込み
-dotenv.config({ path: path.resolve(__dirname, '/Users/k22002/AndroidStudioProjects/test1/api-test2/.env') });
+dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const prisma = new PrismaClient();
 
