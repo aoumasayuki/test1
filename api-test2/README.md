@@ -28,3 +28,7 @@ app.post(api/phaseSummary)
 (3.11.5) (base) k22002@k22002noMacBook-Air api-test2 % curl -X POST http://localhost:3000/api/phaseSummary \
   -H 'Content-Type: application/json' \
   -d '{"sessionId":1,"gameDate":"1日目","gamePhase":"朝"}'
+
+url
+http://localhost:3000/api/export-session?sessionId=
+192.168.101.94

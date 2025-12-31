@@ -33,10 +33,14 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { WebSocketServer, WebSocket } from "ws";
 import { PrismaClient } from "@prisma/client";
-import dotenv from "dotenv";
+import ExcelJS from "exceljs";
+const wb = new ExcelJS.Workbook();import dotenv from "dotenv";
 import fs from "fs";
 import { networkInterfaces } from "os";
-
+const parsePhaseKey = (key: string) => {
+  const idx = key.lastIndexOf("-");
+  return { gameDate: key.slice(0, idx), gamePhase: key.slice(idx + 1) };
+};
 dotenv.config();
 const HEART_RATE_THRESHOLD = 120;
 
@@ -283,13 +287,15 @@ app.get("/set-detail", async (c) => {
   // ④ 既登録の Participant 取得（isAlive も取得）
   const existing = await prisma.participant.findMany({
     where: { sessionId: currentSessionId },
-    select: { sensorId: true, name: true, isAlive: true } // * 追加 //* 
+    select: { sensorId: true, name: true, isAlive: true, role: true } // ← role を追加
   });
   const nameMap: Record<number,string> = {};
   const aliveMap: Record<number,boolean> = {};            // * 追加 //*
+  const roleMap: Record<number,string> = {};   // ← roleMap を用意
   existing.forEach(p => {
     nameMap[p.sensorId] = p.name;
     aliveMap[p.sensorId] = p.isAlive;                     // * 追加 //*
+    roleMap[p.sensorId]  = p.role ?? "";
   });
 
   // ⑤ テーブル行を組み立て（生存チェック列を追加）
@@ -310,7 +316,15 @@ app.get("/set-detail", async (c) => {
           生存
         </label>
       </td>                                                   <!-- * 追加 //* -->
-    </tr>
+          <td>
+      <input 
+        type="text" 
+        name="role_${id}" 
+        value="${roleMap?.[id] || ""}" 
+        placeholder="役職を入力" 
+      />
+    </td>
+      </tr>
   `).join("");
 
   return c.html(`
@@ -350,7 +364,12 @@ app.get("/set-detail", async (c) => {
 
       <!-- 参加者登録 (Sensor ID 1～10) -->
       <table border="1" cellpadding="4" style="margin:0 auto;">
-        <tr><th>Sensor ID</th><th>名前</th><th>生死</th></tr> <!-- * 追加 //* -->
+      <tr>
+        <th>Sensor ID</th>
+        <th>名前</th>
+        <th>生死</th>
+        <th>役職</th> <!-- ← 追加 -->
+      </tr>
         ${rows}
       </table>
       <br/>
@@ -735,6 +754,18 @@ app.get("/graph", async (c) => {
       <button id="btnDate">表示</button>
     </div>
   </div>
+  <!-- フェーズ範囲 + ID -->
+  <div class="block">
+    <h2>フェーズ範囲とIDを選択してください <span class="hint">『開始フェーズ + 終了フェーズ + ID』</span></h2>
+    <div class="row">
+      <label>開始フェーズ:</label>
+      <select id="phaseSelectFrom">${phaseOptions}</select>
+      <label>終了フェーズ:</label>
+      <select id="phaseSelectTo">${phaseOptions}</select>
+      <button id="btnPhaseRange">表示</button>
+    </div>
+  </div>
+
   <script>
     // 共通ヘルパ
     const getVal = (id) => document.getElementById(id).value;
@@ -798,6 +829,23 @@ app.get("/graph", async (c) => {
       if (!sessionId) return warn("セッションID（共通）を選択してください");
       if (!id)        return warn("ID（共通）を選択してください");
       location.href = \`/graph/session/selectid/\${sessionId}?id=\${id}\`;
+    };
+    // ▼ フェーズ範囲 + ID
+    document.getElementById("btnPhaseRange").onclick = () => {
+      const phaseFromEl = document.getElementById("phaseSelectFrom");
+      const phaseToEl   = document.getElementById("phaseSelectTo");
+
+      const fromPhase   = phaseFromEl.value;
+      const toPhase     = phaseToEl.value;
+      const sessionId   = phaseFromEl.selectedOptions[0]?.dataset?.sessionid;
+      const id          = getVal("idSelectCommon");
+
+      if (!fromPhase) return warn("開始フェーズを選択してください");
+      if (!toPhase)   return warn("終了フェーズを選択してください");
+      if (!id)        return warn("ID（共通）を選択してください");
+      if (!sessionId) return warn("セッションIDが取得できません");
+
+      location.href = \`/graph/session/range/\${sessionId}?fromPhase=\${encodeURIComponent(fromPhase)}&toPhase=\${encodeURIComponent(toPhase)}\`;
     };
 
     // ▼ test（セッションID）
@@ -1838,7 +1886,115 @@ app.get("/graph/session/division/:sessionId", async (c) => {
 </html>
   `);
 });
+app.get("/graph/session/range/:sessionId", async (c) => {
+  const sid = parseInt(c.req.param("sessionId"), 10);
+  const fromPhase = c.req.query("fromPhase") || "";
+  const toPhase   = c.req.query("toPhase") || "";
+  const id        = c.req.query("id") || "";
+  const gameDate  = c.req.query("gameDate") || "";
+  const gamePhase = c.req.query("gamePhase") || "";
+  const nameMap = c.req.query("nameMap") || "";
 
+  if (isNaN(sid) || !fromPhase || !toPhase) {
+    return c.text("Invalid sessionId or phase", 400);
+  }
+
+  // fromPhase = "1日目朝-議論" のような文字列から分解する
+  const parseKey = (key: string) => {
+    const idx = key.lastIndexOf("-");
+    return { gameDate: key.slice(0, idx), gamePhase: key.slice(idx + 1) };
+  };
+  const from = parseKey(fromPhase);
+  const to   = parseKey(toPhase);
+
+  // PhaseLog から時間帯を取得
+  const fromLog = await prisma.phaseLog.findFirst({
+    where: { sessionId: sid, gameDate: from.gameDate, gamePhase: from.gamePhase }
+  });
+  const toLog = await prisma.phaseLog.findFirst({
+    where: { sessionId: sid, gameDate: to.gameDate, gamePhase: to.gamePhase }
+  });
+
+  if (!fromLog || !toLog) return c.text("Phase not found", 404);
+
+  const start = fromLog.startTime;
+  const end   = toLog.endTime || new Date();
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Session ${sid} — ${gameDate} ${gamePhase}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    #grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .card { border: 1px solid #ccc; border-radius: 8px; padding: 6px; }
+    .card h3 { margin: 0 0 8px; font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h2>Session ${sid} — ${gameDate} ${gamePhase}</h2>
+  <button onclick="location.href='/graph'">← 戻る</button>
+  <div id="grid"></div>
+
+  <script>
+  (async function(){
+    const sessionId = ${sid};
+    const nameMap = ${JSON.stringify(nameMap)};
+    const start = "${start.toISOString()}";
+    const end = "${end.toISOString()}";
+
+    // 指定フェーズのデータ取得
+    const res = await fetch(\`/api/heartrate?sessionId=\${sessionId}&from=\${encodeURIComponent(start)}&to=\${encodeURIComponent(end)}\`);
+    if (!res.ok) {
+      document.body.insertAdjacentHTML("beforeend", "<p style='color:red'>データ取得に失敗しました</p>");
+      return;
+    }
+    const { data } = await res.json();
+
+    // センサーごとにグループ化
+    const grouped = {};
+    data.forEach(pt => {
+      if (!grouped[pt.id]) grouped[pt.id] = [];
+      grouped[pt.id].push({ x: new Date(pt.Timestamp), y: pt.Heart_Rate });
+    });
+
+    const grid = document.getElementById("grid");
+    const charts = {};
+
+    Object.entries(grouped).forEach(([idStr, arr]) => {
+      const id = parseInt(idStr, 10);
+      const label = nameMap[id] ? \`\${id} — \${nameMap[id]}\` : \`ID:\${id}\`;
+
+      const card = document.createElement("div");
+      card.className = "card";
+      card.id = "card-" + id;
+      card.innerHTML = \`
+        <h3>\${label}</h3>
+        <canvas id="chart-\${id}" width="400" height="200"></canvas>\`;
+      grid.appendChild(card);
+
+      const ctx = document.getElementById("chart-" + id).getContext("2d");
+      charts[id] = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: [{ label: '${gameDate} ${gamePhase}', data: arr, borderColor: 'red', pointRadius: 0 }] },
+        options: {
+          responsive: true,
+          scales: {
+            x: { type: 'time', time: { unit: 'minute' }, title: { display: true, text: '時間' } },
+            y: { title: { display: true, text: 'BPM' } }
+          }
+        }
+      });
+    });
+  })();
+  </script>
+</body>
+</html>
+  `);
+});
 app.get("/graph/session/now/:sessionId", async (c) => {
   const sidParam = c.req.param("sessionId");
   const sessionId = parseInt(sidParam, 10);
@@ -2122,15 +2278,14 @@ app.get("/graph/session/all/:sessionId", async (c) => {
         const id = parseInt(idStr, 10);
         if (!aliveSet.has(id)) return;        // ★ 死亡はスキップ
         visibleIds.push(id);
-
         const recent = arr2.slice(-N);
         const sum = recent.reduce((a, p) => a + p.y, 0);
         const currentAvg = recent.length ? sum / recent.length : 0;
-        const base = baseline[id] || 0;
-        const threshold = base + OFFSET;
-        const deltas = recent.map(p => p.y - threshold).filter(d => d > 0);
-        const maxDelta = deltas.length ? Math.max(...deltas) : 1;
-        const header = \`\${nameMap[id] || 'ID:' + id} — 基準:\${base.toFixed(1)} BPM 今(\${N}件):\${currentAvg.toFixed(1)} BPM\`;
+
+        // ★ 初日の朝(最初フェーズ=arr1)の平均を算出し、横一本線として表示
+        const avgMorning = arr1.length ? (arr1.reduce((a, p) => a + p.y, 0) / arr1.length) : 0;
+
+        const header = \`\${nameMap[id] || 'ID:' + id} — 1日目朝平均:\${avgMorning.toFixed(1)} BPM  今(\${N}件):\${currentAvg.toFixed(1)} BPM\`;
 
         let card = document.getElementById("card-" + id);
         if (!card) {
@@ -2147,27 +2302,49 @@ app.get("/graph/session/all/:sessionId", async (c) => {
 
         const ctx = document.getElementById("chart-" + id).getContext("2d");
         if (!charts[id]) {
-          charts[id] = new Chart(ctx, {
-            type: 'line',
-            data: {
-              datasets: [
-                { label: '1日目朝', data: arr1, borderColor: 'blue', pointRadius: 0, spanGaps: false },
-                { label: '現在フェーズ', data: arr2, borderColor: 'red', pointRadius: 0, spanGaps: false }
-              ]
-            },
-            options: {
-              responsive: true,
-              scales: {
-                x: { type: 'linear', display: false },
-                y: { title: { display: true, text: 'BPM' } }
+        charts[id] = new Chart(ctx, {
+          type: 'line',
+          data: {
+            datasets: [
+              // ★ 初日平均の横線（2点で水平線にする）
+              {
+                label: '1日目朝 平均',
+                data: arr1.length ? [
+                  { x: 0, y: avgMorning },
+                  { x: arr2.length + 2, y: avgMorning }
+                ] : [],
+                borderColor: 'blue',
+                borderDash: [5, 5],
+                pointRadius: 0,
+                borderWidth: 2
+              },
+              // 現在フェーズの折れ線
+              {
+                label: '現在フェーズ',
+                data: arr2,
+                borderColor: 'red',
+                pointRadius: 0,
+                spanGaps: false
               }
+            ]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              x: { type: 'linear', display: false },
+              y: { title: { display: true, text: 'BPM' } }
             }
-          });
+          }
+        });
         } else {
-          const chart = charts[id];
-          chart.data.datasets[0].data = arr1;
-          chart.data.datasets[1].data = arr2;
-          chart.update();
+        const chart = charts[id];
+        // 横線の長さは「現在フェーズの点数 + 2」に合わせて毎回引き直す
+        chart.data.datasets[0].data = arr1.length ? [
+          { x: 0, y: avgMorning },
+          { x: arr2.length + 2, y: avgMorning }
+        ] : [];
+        chart.data.datasets[1].data = arr2;
+        chart.update();
         }
       });
 
@@ -2189,7 +2366,6 @@ app.get("/graph/session/all/:sessionId", async (c) => {
 </html>
   `);
 });
-
 /*app.get("/graph/session/test/:sessionId", async (c) => {
   const sidParam = c.req.param("sessionId");
   const sessionId = parseInt(sidParam, 10);
@@ -2727,6 +2903,245 @@ app.get("/graph/session/all/:sessionId", async (c) => {
 
 //api設計
 
+/* ==============================
+// 検証用UI: /difference_heatrate（参加者名対応）
+//  - セッション選択 → /api/phaseLog と /api/participants を読み込み
+//  - センサー選択の <option> に「sensorId - 参加者名」を表示
+//  - /api/avg-range を叩いて結果表示（結果にも参加者名を表示）
+// ==============================*/
+app.get("/difference_heatrate", async (c) => {
+  const sessions = await prisma.phaseLog.findMany({
+    distinct: ["sessionId"],
+    select: { sessionId: true },
+    orderBy: { sessionId: "asc" }
+  });
+
+  const sessionOptions = sessions
+    .map(s => `<option value="${s.sessionId}">${s.sessionId}</option>`)
+    .join("");
+
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>差分検証 - difference_heatrate</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    h2 { margin: 0 0 12px; }
+    .row { margin: 8px 0; display: flex; gap: 8px; align-items: center; }
+    label { min-width: 120px; display: inline-block; }
+    select, input { padding: 4px 8px; }
+    button { padding: 6px 12px; cursor: pointer; }
+    #result { margin-top: 16px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; }
+    .muted { color: #666; font-size: 12px; }
+    .error { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h2>範囲平均と「1日目朝」平均との差分（検証用）</h2>
+
+  <div class="row">
+    <label>セッションID:</label>
+    <select id="sessionId">${sessionOptions}</select>
+    <button id="loadData">フェーズ/参加者 読込</button>
+  </div>
+
+  <div class="row">
+    <label>センサー（参加者名）:</label>
+    <select id="sensorId"></select>
+  </div>
+
+  <div class="row">
+    <label>開始フェーズ:</label>
+    <select id="fromPhase"></select>
+  </div>
+
+  <div class="row">
+    <label>終了フェーズ:</label>
+    <select id="toPhase"></select>
+  </div>
+
+  <div class="row">
+    <button id="run">計算</button>
+  </div>
+
+  <div id="result">
+    <div class="muted">ここに結果が表示されます</div>
+  </div>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+    const fmt = (v) => (v==null || Number.isNaN(v)) ? '-' : Number(v).toFixed(2);
+
+    // フェーズと参加者を読み込む
+    el("loadData").onclick = async () => {
+      const sid = el("sessionId").value;
+      if (!sid) return alert("セッションIDを選択してください");
+
+      // 1) フェーズ一覧
+      const resPhase = await fetch(\`/api/phaseLog?sessionId=\${sid}\`);
+      if (!resPhase.ok) {
+        el("result").innerHTML = '<div class="error">/api/phaseLog の取得に失敗しました</div>';
+        return;
+      }
+      const logs = await resPhase.json();
+      const phaseOpts = logs.map(log =>
+        \`<option value="\${log.gameDate}-\${log.gamePhase}">\${log.gameDate} \${log.gamePhase}</option>\`
+      ).join("");
+      el("fromPhase").innerHTML = phaseOpts;
+      el("toPhase").innerHTML = phaseOpts;
+
+      // 2) 参加者一覧
+      const resPart = await fetch(\`/api/participants?sessionId=\${sid}\`);
+      if (!resPart.ok) {
+        el("result").innerHTML = '<div class="error">/api/participants の取得に失敗しました</div>';
+        return;
+      }
+      const participants = await resPart.json();
+
+      // 「sensorId - name」形式に整形
+      const sensorOpts = participants.map(p => {
+        const label = p.name ? \`\${p.sensorId} - \${p.name}\` : String(p.sensorId);
+        return \`<option value="\${p.sensorId}" data-name="\${p.name || ''}">\${label}</option>\`;
+      }).join("");
+      el("sensorId").innerHTML = sensorOpts;
+
+      el("result").innerHTML = '<div class="muted">フェーズとセンサーを選んで「計算」を押してください</div>';
+    };
+
+    // 計算実行
+    el("run").onclick = async () => {
+      const sessionId = el("sessionId").value;
+      const sensorSel = el("sensorId");
+      const sensorId  = sensorSel.value;
+      const pname     = sensorSel.selectedOptions[0]?.dataset?.name || '';
+      const fromPhase = el("fromPhase").value;
+      const toPhase   = el("toPhase").value;
+
+      if (!sessionId || !sensorId || !fromPhase || !toPhase) {
+        alert("すべての項目を選択してください");
+        return;
+      }
+
+      const q = new URLSearchParams({ sessionId, sensorId, fromPhase, toPhase }).toString();
+      const res = await fetch('/api/avg-range?' + q);
+      const data = await res.json();
+
+      if (!res.ok) {
+        el('result').innerHTML = \`<div class="error">エラー: \${data.error || res.statusText}</div>\`;
+        return;
+      }
+
+      const { period, rangeAvg, baselineAvg, delta, count } = data;
+      const namePart = pname ? \`（\${pname}）\` : '';
+      el('result').innerHTML = \`
+        <div><b>セッション:</b> \${sessionId} / <b>センサー:</b> \${sensorId} \${namePart}</div>
+        <div><b>期間:</b> \${period.start} ～ \${period.end}</div>
+        <div style="margin-top:8px;">
+          <div>範囲平均: <b>\${fmt(rangeAvg)}</b></div>
+          <div>1日目朝 平均: <b>\${fmt(baselineAvg)}</b></div>
+          <div>差分 (範囲 − 朝): <b>\${fmt(delta)}</b></div>
+          <div>レコード数: <b>\${count}</b></div>
+        </div>
+      \`;
+    };
+  </script>
+</body>
+</html>
+  `);
+});
+app.get("/difference_export", async (c) => {
+  // セッション一覧
+  const sessions = await prisma.phaseLog.findMany({
+    distinct: ["sessionId"],
+    select: { sessionId: true },
+    orderBy: { sessionId: "asc" }
+  });
+
+  const sessionOptions = sessions
+    .map(s => `<option value="${s.sessionId}">${s.sessionId}</option>`)
+    .join("");
+
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>差分エクスポート</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; }
+.row { margin: 6px 0; }
+label { min-width: 100px; display:inline-block; }
+table { border-collapse: collapse; margin-top: 12px; }
+td, th { border: 1px solid #ccc; padding: 4px 8px; }
+select { min-width: 120px; }
+</style>
+</head>
+<body>
+  <h2>差分エクスポート（全員分）</h2>
+
+  <div class="row">
+    <label>セッションID:</label>
+    <select id="sessionId">${sessionOptions}</select>
+    <button id="load">読込</button>
+  </div>
+
+  <form id="exportForm" method="POST" action="/api/export-difference">
+    <input type="hidden" name="sessionId" id="formSessionId" />
+    <table id="participantsTable">
+      <thead>
+        <tr>
+          <th>SensorID</th>
+          <th>Name</th>
+          <th>開始フェーズ</th>
+          <th>終了フェーズ</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="row">
+      <button type="submit">エクスポート</button>
+    </div>
+  </form>
+
+<script>
+const el = (id) => document.getElementById(id);
+
+document.getElementById("load").onclick = async () => {
+  const sid = el("sessionId").value;
+  if (!sid) return alert("セッションを選んでください");
+  el("formSessionId").value = sid;
+
+  // 参加者取得
+  const resP = await fetch("/api/participants?sessionId=" + sid);
+  const participants = await resP.json();
+
+  // フェーズ一覧取得
+  const resF = await fetch("/api/phaseLog?sessionId=" + sid);
+  const phases = await resF.json();
+  const opts = phases.map((p, i) =>
+    \`<option value="\${p.gameDate}-\${p.gamePhase}"\${i === 1 ? "selected" : ""}>\${p.gameDate} \${p.gamePhase}</option>\`
+  ).join("");
+
+  // テーブル描画
+  const tbody = el("participantsTable").querySelector("tbody");
+  tbody.innerHTML = participants.map(p => \`
+    <tr>
+      <td>\${p.sensorId}<input type="hidden" name="sensorId" value="\${p.sensorId}" /></td>
+      <td>\${p.name || ""}<input type="hidden" name="name" value="\${p.name || ""}" /></td>
+      <td><select name="fromPhase">\${opts}</select></td>
+      <td><select name="toPhase">\${opts}</select></td>
+    </tr>
+  \`).join("");
+};
+</script>
+</body>
+</html>
+  `);
+});
+
+
 app.get('/api/heartrate', async (c) => {
   const idParam = c.req.query("id");
   const phaseKey = c.req.query("phase");
@@ -3060,6 +3475,321 @@ app.get("/api/participants", async (c) => {
   });
   return c.json(participants);
 });
+app.get("/api/phase-options", async (c) => {
+  const sid = parseInt(c.req.query("sessionId") || "", 10);
+  if (isNaN(sid)) return c.text("Invalid sessionId", 400);
+
+  const logs = await prisma.phaseLog.findMany({
+    where: { sessionId: sid },
+    orderBy: { startTime: "asc" },
+    select: { gameDate: true, gamePhase: true, sessionId: true }
+  });
+
+  // 「1日目朝-議論」みたいなラベルを作って返す
+  const options = logs.map(log => ({
+    value: `${log.gameDate}-${log.gamePhase}`,
+    label: `${log.gameDate} ${log.gamePhase}`,
+    sessionId: log.sessionId
+  }));
+
+  return c.json(options);
+});
+app.get("/api/avg-range", async (c) => {
+  const sessionId = c.req.query("sessionId");
+  const sensorId  = c.req.query("sensorId");
+  const fromPhase = c.req.query("fromPhase");
+  const toPhase   = c.req.query("toPhase");
+
+  if (!sessionId || !sensorId || !fromPhase || !toPhase) {
+    return c.json({ error: "sessionId, sensorId, fromPhase, toPhase は必須です" }, 400);
+  }
+
+  // "1日目朝-議論" のようなキーを分解
+  function parsePhaseKey(key: string) {
+    const idx = key.lastIndexOf("-");
+    return { gameDate: key.slice(0, idx), gamePhase: key.slice(idx + 1) };
+  }
+  const from = parsePhaseKey(fromPhase);
+  const to   = parsePhaseKey(toPhase);
+
+  // PhaseLog から範囲を取得（セッションID込み）
+  const fromLog = await prisma.phaseLog.findFirst({
+    where: { sessionId: Number(sessionId), gameDate: from.gameDate, gamePhase: from.gamePhase },
+    orderBy: { startTime: "asc" }
+  });
+  const toLog = await prisma.phaseLog.findFirst({
+    where: { sessionId: Number(sessionId), gameDate: to.gameDate, gamePhase: to.gamePhase },
+    orderBy: { startTime: "asc" }
+  });
+
+  if (!fromLog || !toLog) {
+    return c.json({ error: "指定フェーズが見つかりません" }, 404);
+  }
+
+  const start = new Date(fromLog.startTime);
+  const end   = toLog.endTime ? new Date(toLog.endTime) : new Date();
+
+  // 指定範囲の心拍データ
+  const rows = await prisma.csvData.findMany({
+    where: {
+      id: Number(sensorId),
+      Timestamp: { gte: start, lte: end }
+    },
+    select: { Heart_Rate: true }
+  });
+  const rangeAvg = rows.length
+    ? rows.reduce((a, r) => a + r.Heart_Rate, 0) / rows.length
+    : null;
+
+  // === ベースライン ===
+  // セッション内で一番最初に登録された PhaseLog を取得
+  const firstLog = await prisma.phaseLog.findFirst({
+    where: { sessionId: Number(sessionId) },
+    orderBy: { startTime: "asc" }
+  });
+
+  let baselineAvg: number | null = null;
+  if (firstLog) {
+    const baseStart = new Date(firstLog.startTime);
+    const baseEnd   = firstLog.endTime ? new Date(firstLog.endTime) : new Date();
+
+    const baseRows = await prisma.csvData.findMany({
+      where: {
+        id: Number(sensorId),
+        Timestamp: { gte: baseStart, lte: baseEnd }
+      },
+      select: { Heart_Rate: true }
+    });
+    baselineAvg = baseRows.length
+      ? baseRows.reduce((a, r) => a + r.Heart_Rate, 0) / baseRows.length
+      : null;
+  }
+
+  return c.json({
+    sessionId: Number(sessionId),
+    sensorId: Number(sensorId),
+    period: { from: fromPhase, to: toPhase, start, end },
+    rangeAvg,
+    baselineAvg,
+    delta: (rangeAvg != null && baselineAvg != null) ? rangeAvg - baselineAvg : null,
+    count: rows.length
+  });
+});
+app.get("/api/export-session", async (c) => {
+  const sid = parseInt(c.req.query("sessionId") || "", 10);
+  if (isNaN(sid)) return c.text("Invalid sessionId", 400);
+
+  // 参加者一覧（sensorId と名前）
+  const participants = await prisma.participant.findMany({
+    where: { sessionId: sid },
+    select: { sensorId: true, name: true }
+  });
+
+  if (!participants.length) {
+    return c.text("No participants found", 404);
+  }
+
+  // 一番最初のフェーズ (baseline)
+  const firstPhase = await prisma.phaseLog.findFirst({
+    where: { sessionId: sid },
+    orderBy: { startTime: "asc" }
+  });
+  if (!firstPhase) return c.text("No phaseLog found", 404);
+
+  const baseStart = new Date(firstPhase.startTime);
+  const baseEnd   = firstPhase.endTime ? new Date(firstPhase.endTime) : new Date();
+
+  // その他のフェーズの範囲（baselineを除く）
+  const otherPhases = await prisma.phaseLog.findMany({
+    where: { sessionId: sid, id: { not: firstPhase.id } },
+    orderBy: { startTime: "asc" }
+  });
+  const otherStart = otherPhases.length ? new Date(otherPhases[0].startTime) : null;
+  const otherEnd   = otherPhases.length && otherPhases[otherPhases.length - 1].endTime
+    ? new Date(otherPhases[otherPhases.length - 1].endTime!)
+    : null;
+
+  // Excel workbook
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(`Session_${sid}`);
+
+  // header
+  ws.addRow([
+    "SessionID",
+    "SensorID",
+    "Name",
+    "Baseline Avg (最初の区間)",
+    "Other Avg (以降の区間)",
+    "Delta",
+    "Record Count"
+  ]);
+
+  for (const p of participants) {
+    // Baseline 心拍
+    const baseRows = await prisma.csvData.findMany({
+      where: {
+        id: p.sensorId,
+        Timestamp: { gte: baseStart, lte: baseEnd }
+      },
+      select: { Heart_Rate: true }
+    });
+    const baselineAvg = baseRows.length
+      ? baseRows.reduce((a, r) => a + r.Heart_Rate, 0) / baseRows.length
+      : null;
+
+    // Other 心拍
+    let otherAvg: number | null = null;
+    let otherCount = 0;
+    if (otherStart && otherEnd) {
+      const otherRows = await prisma.csvData.findMany({
+        where: {
+          id: p.sensorId,
+          Timestamp: { gte: otherStart, lte: otherEnd }
+        },
+        select: { Heart_Rate: true }
+      });
+      otherAvg = otherRows.length
+        ? otherRows.reduce((a, r) => a + r.Heart_Rate, 0) / otherRows.length
+        : null;
+      otherCount = otherRows.length;
+    }
+
+    const delta =
+      baselineAvg != null && otherAvg != null ? otherAvg - baselineAvg : null;
+
+    ws.addRow([
+      sid,
+      p.sensorId,
+      p.name,
+      baselineAvg,
+      otherAvg,
+      delta,
+      otherCount
+    ]);
+  }
+
+  // ファイル保存
+  const filePath = `./avg_result_session_${sid}.xlsx`;
+  await wb.xlsx.writeFile(filePath);
+
+  return c.text(`Exported to ${filePath}`);
+});
+
+app.post("/api/export-difference", async (c) => {
+  // ← Fetch API 準拠。formidableは不要！
+  const fd = await c.req.formData();
+
+  const sessionId = Number(fd.get("sessionId"));
+  if (!Number.isFinite(sessionId)) {
+    return c.text("Invalid sessionId", 400);
+  }
+
+  // 同名inputは getAll で配列取得
+  const sensorIds = (fd.getAll("sensorId") as string[]).map((v) => Number(v));
+  const names     = (fd.getAll("name") as string[]).map((v) => v ?? "");
+  const froms     = (fd.getAll("fromPhase") as string[]).map(String);
+  const tos       = (fd.getAll("toPhase") as string[]).map(String);
+
+  // baseline: セッション内で一番早いフェーズ
+  const firstPhase = await prisma.phaseLog.findFirst({
+    where: { sessionId },
+    orderBy: { startTime: "asc" },
+  });
+  if (!firstPhase) return c.text("No PhaseLog found", 404);
+
+  const baseStart = new Date(firstPhase.startTime);
+  const baseEnd   = firstPhase.endTime ? new Date(firstPhase.endTime) : new Date();
+
+  // Excel 準備
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(`Session_${sessionId}`);
+  ws.addRow([
+    "SessionID",
+    "SensorID",
+    "Name",
+    "Baseline Avg (最初の区間)",
+    "Selected Avg (指定区間)",
+    "Delta",
+    "Record Count",
+  ]);
+
+  for (let i = 0; i < sensorIds.length; i++) {
+    const sid     = sensorIds[i];
+    const name    = names[i] ?? "";
+    const fromKey = froms[i];
+    const toKey   = tos[i];
+
+    if (!Number.isFinite(sid) || !fromKey || !toKey) continue;
+
+    // 指定フェーズ → 時刻解決（sessionIdを必ず条件に含める）
+    const from = parsePhaseKey(fromKey);
+    const to   = parsePhaseKey(toKey);
+
+    const fromLog = await prisma.phaseLog.findFirst({
+      where: { sessionId, gameDate: from.gameDate, gamePhase: from.gamePhase },
+      orderBy: { startTime: "asc" },
+    });
+    const toLog = await prisma.phaseLog.findFirst({
+      where: { sessionId, gameDate: to.gameDate, gamePhase: to.gamePhase },
+      orderBy: { startTime: "asc" },
+    });
+    if (!fromLog || !toLog) {
+      // 見つからない行はスキップ
+      continue;
+    }
+
+    const selStart = new Date(fromLog.startTime);
+    const selEnd   = toLog.endTime ? new Date(toLog.endTime) : new Date();
+    if (selEnd < selStart) {
+      // 逆順選択の安全弁
+      const t = selStart.getTime();
+      selStart.setTime(selEnd.getTime());
+      selEnd.setTime(t);
+    }
+
+    // Baseline（最初の区間）
+    const baseRows = await prisma.csvData.findMany({
+      where: { id: sid, Timestamp: { gte: baseStart, lte: baseEnd } },
+      select: { Heart_Rate: true },
+    });
+    const baselineAvg =
+      baseRows.length
+        ? baseRows.reduce((a, r) => a + Number(r.Heart_Rate || 0), 0) / baseRows.length
+        : null;
+
+    // 選択区間
+    const selRows = await prisma.csvData.findMany({
+      where: { id: sid, Timestamp: { gte: selStart, lte: selEnd } },
+      select: { Heart_Rate: true },
+    });
+    const selectedAvg =
+      selRows.length
+        ? selRows.reduce((a, r) => a + Number(r.Heart_Rate || 0), 0) / selRows.length
+        : null;
+
+    const delta =
+      baselineAvg != null && selectedAvg != null ? selectedAvg - baselineAvg : null;
+
+    ws.addRow([
+      sessionId,
+      sid,
+      name,
+      baselineAvg,
+      selectedAvg,
+      delta,
+      selRows.length,
+    ]);
+  }
+
+  // 即ダウンロードさせる（サーバーに保存しない）
+  const buffer = await wb.xlsx.writeBuffer();
+  return c.newResponse(buffer as ArrayBuffer, 200, {
+    "Content-Type":
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Content-Disposition": `attachment; filename="export_difference_session_${sessionId}.xlsx"`,
+  });
+});
+
 
 // index.ts に追加
 

@@ -52,6 +52,7 @@ model Participant {
   sessionId Int
   sensorId  Int
   name      String
+  role      String?   // ← 役職を追加（任意入力可）
   createdAt DateTime @default(now())
   isAlive   Boolean  @default(true) // ← 生死判定を追加
 
